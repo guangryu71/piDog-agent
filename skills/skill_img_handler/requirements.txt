@@ -1,0 +1,17 @@
+# Image Handler 依赖清单
+
+# 阿里云通义千问SDK（推荐，国内服务）
+dashscope>=1.14.0
+
+# HTTP请求库
+requests>=2.28.0
+
+# 图片处理库（可选，用于本地转换和调整）
+Pillow>=9.0.0
+
+# OCR工具（可选，离线方案）
+# paddlepaddle>=2.4.0
+# paddleocr>=2.6.0
+
+# 注意：主要依赖dashscope调用通义千问和通义万相API
+# 使用前需配置DASHSCOPE_API_KEY环境变量

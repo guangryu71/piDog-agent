@@ -1,0 +1,5 @@
+name: "skill_Project_Development_Engineer"
+version: "1.0.0"
+description: "专业项目开发工程师，负责高质量项目的模块化设计、构建和验证"
+entrypoint: "README.md"
+language: "python"

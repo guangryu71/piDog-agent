@@ -1,0 +1,88 @@
+name: skill_img_handler
+version: 2.0.0
+description: 专业图片处理助手，内嵌大模型API调用能力，用于图片识别、生成、编辑、转换、OCR、质量分析等操作。当用户需要处理图片或通过AI生成/识别图片时触发此技能。
+entrypoint: README.md
+language: python
+
+# 工具接口说明
+# 本技能的核心模块为 tools/image_handler.py，通过 tools/__init__.py 暴露：
+#
+# ┌─────────────────────────────────────────────────────────────┐
+# │ ★ 统一调度入口: process(operation, **kwargs)                │
+# │    所有操作走一个入口，底层统一使用通义千问VL模型               │
+# │                                                             │
+# │    示例:                                                     │
+# │      process("recognize", image_path="photo.jpg")           │
+# │      process("generate", text_prompt="一只小猫")             │
+# │      process("img2img", image_path="ref.jpg", prompt="动漫风格") │
+# │      process("edit", image_path="old.png", instruction=...) │
+# │      process("ocr", image_path="scan.png")                  │
+# │      process("analyze", image_path="photo.jpg")             │
+# │      process("convert", input_path="a.png", output_format="jpg") │
+# │      process("list")  # 列出所有支持的操作                     │
+# └─────────────────────────────────────────────────────────────┘
+#
+#   统一入口类: ImageHandler（类方法封装，底层调 process）
+#     Ih.process("recognize", image_path="photo.jpg")
+#     Ih.recognize("photo.jpg", prompt="里面有什么？")
+#     Ih.generate("一只可爱的小猫", size="1024*1024")
+#     Ih.img2img("photo.jpg", prompt="动漫风格", style="anime")
+#     Ih.edit("old.png", "把背景改成红色")
+#     Ih.ocr("scan.png", language="zh-cn")
+#     Ih.convert("input.png", "jpg", quality=95)
+#     Ih.analyze("photo.jpg")
+#     Ih.remove_bg("portrait.jpg")
+#     Ih.enhance("dark.jpg", enhancement_type="denoise")
+#     Ih.resize("large.png", width=800)
+#     Ih.compare("img1.jpg", "img2.jpg")
+#     Ih.batch(["a.png","b.png"], operation="convert", output_format="jpg")
+#     Ih.detect_text("menu.jpg")
+#     Ih.generate_multi("风景画", count=3)
+#     Ih.batch_recognize(["img1.jpg","img2.jpg"], prompt="描述里面的物体")
+#     Ih.ocr_multi(["scan1.png","scan2.png"], merge_output=True)
+#     Ih.list_operations()
+#
+#   各功能也可作为独立函数导入（向后兼容）:
+#     from tools.image_handler import recognize_image, generate_image, ...
+#
+# 依赖: dashscope, requests（详见 requirements.txt）
+
+# 外部配置项
+settings:
+  # 通义千问视觉模型 API 配置（用于图片识别）
+  qwen_vl_api_key:
+    type: string
+    description: 通义千问视觉模型 API 密钥，用于 recognize_image 等识别功能
+    required: false
+    env_var: DASHSCOPE_API_KEY
+    default: ""
+
+  # 通义万相文生图 API 配置（用于图片生成）
+  wanxiang_api_key:
+    type: string
+    description: 通义万相文生图 API 密钥，用于 generate_image 等生成功能
+    required: false
+    env_var: DASHSCOPE_API_KEY
+    default: ""
+
+  # 图像编辑 API 配置（可选，默认使用通义千问）
+  image_edit_api_key:
+    type: string
+    description: 图像编辑 API 密钥，用于 edit_image 等功能
+    required: false
+    env_var: DASHSCOPE_API_KEY
+    default: ""
+
+  # 通用配置
+  max_image_size:
+    type: integer
+    description: 最大图片处理尺寸（像素），超过此尺寸会自动缩放
+    required: false
+    default: 4096
+
+  timeout:
+    type: integer
+    description: API 调用超时时间（秒）
+    required: false
+    default: 60
+

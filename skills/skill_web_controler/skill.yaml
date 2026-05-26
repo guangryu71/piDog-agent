@@ -1,0 +1,97 @@
+name: skill_web_controler
+version: 3.5.0
+description: 浏览器自动化控制助手（QwenPaw 服务代理）。本技能只有一个统一工具 execute_browser_command，将所有浏览器操作需求通过自然语言指令发送给 QwenPaw 后端服务。**重要：每个用户需求只需调用一次该工具，在 command 参数中包含完整的操作序列，不要拆分为多个步骤。**支持自动检测并启动 QwenPaw 服务。所有操作日志实时同步到控制台。**QwenPaw 返回的内容会自动保存到配置的工作目录中。**
+entrypoint: README.md
+language: python
+
+# 工具接口说明
+# 本技能的核心工具模块是 tools/qwenpaw_client.py，通过 tools/__init__.py 暴露：
+#
+#   execute_browser_command(task, **kwargs) -> str
+#     - 统一入口（实际是 qwenpaw_client.run 函数）
+#     - 将自然语言指令发送给 QwenPaw Agent，由 Agent 解析并执行浏览器操作
+#     - 返回 Agent 的最终回复文本
+#
+#   tools/qwenpaw_client.py 公开接口：
+#     - run(task, **kwargs) -> str    (模块级便捷函数)
+#     - QwenPawClient 类
+#       - .run(task, session_id, user_id, timeout, verbose, on_approval) -> str
+#       - .chat(messages, session_id, agent_id) -> str
+#       - .health_check() -> bool
+#       - .list_pending_approvals(session_id) -> list[PendingApproval]
+#     - PendingApproval 数据类（包含 request_id, tool_name, severity, command 等）
+#     - check_port(port, host) -> bool
+#
+# 通信方式: HTTP POST -> SSE (Server-Sent Events) 流式响应
+# SSE 事件类型: response(状态), message(消息), content(text/delta + data/工具调用)
+# 工具保护: 敏感操作触发 tool_guard_approval 审批事件，自动等待用户确认
+
+# 外部配置项
+settings:
+  # QwenPaw 服务配置
+  qwenpaw_path:
+    type: string
+    description: QwenPaw 项目安装路径，用于自动启动服务（注意：这不是工作目录）
+    required: false
+    default: "D:\\developer\\myProject\\buffer\\smart_agent_new\\qwenpaw\\qwenpaw"
+
+  qwenpaw_port:
+    type: integer
+    description: QwenPaw 服务端口
+    required: false
+    default: 8088
+
+  # QwenPaw API 连接配置
+  qwenpaw_base_url:
+    type: string
+    description: QwenPaw API 基础 URL
+    required: false
+    default: "http://localhost:8088"
+
+  qwenpaw_chat_endpoint:
+    type: string
+    description: QwenPaw 聊天接口端点
+    required: false
+    default: "/api/console/chat"
+
+  # QwenPaw Agent 配置
+  agent_id:
+    type: string
+    description: 目标 Agent ID
+    required: false
+    default: "default"
+
+  auth_token:
+    type: string
+    description: 认证令牌（远程访问时需要）
+    required: false
+    default: ""
+
+  # 任务配置
+  task_timeout:
+    type: integer
+    description: 任务执行超时（秒）
+    required: false
+    default: 600
+
+  verbose:
+    type: boolean
+    description: 是否打印动态执行日志（连接状态、工具调用、耗时统计等）
+    required: false
+    default: true
+
+  # QwenPaw 工作区 profiles 配置
+  qwenpaw_profiles:
+    type: object
+    description: QwenPaw工作区配置，用于同步更新到QwenPaw配置文件
+    required: false
+    default:
+      default:
+        id: "default"
+        workspace_dir: "C:\\Users\\lenovo\\.qwenpaw\\workspaces\\default"
+        enabled: true
+      QwenPaw_QA_Agent_0.2:
+        id: "QwenPaw_QA_Agent_0.2"
+        workspace_dir: "C:\\Users\\lenovo\\.qwenpaw\\workspaces\\QwenPaw_QA_Agent_0.2"
+        enabled: true
+

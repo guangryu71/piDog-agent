@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PiDog - SmartAgent Control Panel</title>
+<style>
+:root {
+  --bg: #0f1117; --panel: #1a1d27; --border: #2a2d3a;
+  --text: #e1e4ed; --dim: #7b8191; --accent: #6c5ce7;
+  --green: #00d2a0; --red: #ff5e7a; --yellow: #ffb84d;
+  --radius: 10px; --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); height: 100vh; display: flex; }
+a { color: var(--accent); text-decoration: none; }
+
+/* Sidebar */
+nav { width: 220px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 16px 0; flex-shrink: 0; }
+nav .logo { font-size: 20px; font-weight: 700; padding: 0 20px 20px; color: var(--accent); letter-spacing: -0.5px; }
+nav a { display: flex; align-items: center; gap: 10px; padding: 10px 20px; color: var(--dim); font-size: 14px; border-left: 3px solid transparent; transition: .15s; cursor: pointer; }
+nav a:hover, nav a.active { color: var(--text); background: rgba(108,92,231,.1); border-left-color: var(--accent); }
+nav .badge { font-size: 11px; background: var(--accent); color: #fff; padding: 1px 7px; border-radius: 10px; margin-left: auto; }
+
+/* Main */
+main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.page { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+.page.active { display: flex; }
+header { padding: 16px 24px; border-bottom: 1px solid var(--border); font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+/* Chat */
+.chat-messages { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
+.msg { max-width: 85%; padding: 10px 14px; border-radius: var(--radius); font-size: 14px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.msg.user { align-self: flex-end; background: var(--accent); }
+.msg.assistant { align-self: flex-start; background: var(--panel); border: 1px solid var(--border); }
+.msg.system { align-self: center; background: transparent; color: var(--dim); font-size: 12px; font-style: italic; max-width: 100%; }
+.msg.tool { align-self: flex-start; background: #1a2420; border: 1px solid #2a4a3a; color: var(--green); font-size: 13px; }
+.msg.error { align-self: flex-start; background: #241a1a; border: 1px solid #4a2a2a; color: var(--red); }
+.msg img { max-width: 400px; max-height: 300px; border-radius: 8px; margin-top: 6px; display: block; }
+.msg .label { font-size: 11px; text-transform: uppercase; margin-bottom: 2px; opacity: 0.7; }
+.chat-input-area { padding: 12px 24px; border-top: 1px solid var(--border); display: flex; gap: 10px; flex-shrink: 0; }
+.chat-input-area input { flex: 1; padding: 10px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 14px; outline: none; }
+.chat-input-area input:focus { border-color: var(--accent); }
+.chat-input-area button { padding: 10px 20px; background: var(--accent); border: none; border-radius: var(--radius); color: #fff; font-size: 14px; cursor: pointer; font-weight: 600; }
+.chat-input-area button:disabled { opacity: .5; cursor: not-allowed; }
+.chat-input-area button.secondary { background: var(--panel); border: 1px solid var(--border); color: var(--dim); }
+
+/* Cards / Grid */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; padding: 20px 24px; overflow-y: auto; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
+.card h3 { font-size: 15px; margin-bottom: 6px; }
+.card p { font-size: 13px; color: var(--dim); line-height: 1.5; }
+.card .row { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+.card .tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: rgba(108,92,231,.15); color: var(--accent); }
+.card button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-size: 13px; }
+.card button.primary { background: var(--accent); border: none; color: #fff; }
+.card button.danger { background: var(--red); border: none; color: #fff; }
+
+/* Table */
+.table-wrap { padding: 20px 24px; overflow: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+th { color: var(--dim); font-weight: 500; font-size: 12px; text-transform: uppercase; }
+td { color: var(--text); }
+.toggle { width: 44px; height: 24px; border-radius: 12px; background: var(--border); position: relative; cursor: pointer; transition: .2s; display: inline-block; }
+.toggle.on { background: var(--green); }
+.toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: .2s; }
+.toggle.on::after { left: 22px; }
+
+/* Stats */
+.stats-row { display: flex; gap: 16px; padding: 20px 24px; flex-wrap: wrap; }
+.stat-box { flex: 1; min-width: 160px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; text-align: center; }
+.stat-box .num { font-size: 28px; font-weight: 700; color: var(--accent); }
+.stat-box .label { font-size: 12px; color: var(--dim); margin-top: 4px; }
+
+/* Spinner */
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--dim); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; margin-right: 8px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Modal */
+.modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.6); z-index: 100; align-items: center; justify-content: center; }
+.modal-overlay.show { display: flex; }
+.modal { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 420px; max-width: 90%; }
+.modal h3 { margin-bottom: 14px; }
+.modal input, .modal textarea { width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 13px; margin-bottom: 10px; outline: none; }
+.modal textarea { resize: vertical; min-height: 80px; }
+.modal .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+
+/* Approval Modal */
+.approval-modal { background: #1a1d27; border: 2px solid var(--yellow); border-radius: 14px; padding: 28px; width: 480px; max-width: 92%; text-align: center; }
+.approval-modal .icon { font-size: 42px; margin-bottom: 8px; }
+.approval-modal h3 { font-size: 17px; margin-bottom: 6px; }
+.approval-modal .tool-name { font-size: 13px; color: var(--dim); margin-bottom: 12px; font-family: monospace; }
+.approval-modal .args-box { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; text-align: left; font-size: 12px; font-family: monospace; color: var(--dim); max-height: 120px; overflow-y: auto; margin-bottom: 14px; white-space: pre-wrap; word-break: break-all; }
+.approval-modal .warning { font-size: 12px; color: var(--yellow); margin-bottom: 18px; }
+.approval-modal .actions { display: flex; gap: 12px; justify-content: center; }
+.approval-modal .actions button { padding: 10px 28px; border-radius: 8px; border: none; font-size: 14px; cursor: pointer; font-weight: 600; }
+.approval-modal .approve-btn { background: var(--green); color: #fff; }
+.approval-modal .reject-btn { background: var(--red); color: #fff; }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<nav>
+  <div class="logo">🐶 PiDog</div>
+  <a class="active" data-page="chat" onclick="switchPage('chat')">💬 对话</a>
+  <a data-page="models" onclick="switchPage('models')">🔮 模型</a>
+  <a data-page="tools" onclick="switchPage('tools')">🔧 工具 <span class="badge" id="tool-count">0</span></a>
+  <a data-page="skills" onclick="switchPage('skills')">📦 技能 <span class="badge" id="skill-count">0</span></a>
+  <a data-page="tokens" onclick="switchPage('tokens')">📊 Token</a>
+</nav>
+
+<!-- Main Content -->
+<main>
+
+<!-- ===== CHAT ===== -->
+<div class="page active" id="page-chat">
+  <header>
+    <span>💬 Agent 对话</span>
+    <span style="margin-left:auto;font-size:13px;color:var(--dim)" id="chat-session">新会话</span>
+    <button class="secondary" style="font-size:12px;padding:4px 12px;border:1px solid var(--border);background:var(--panel);color:var(--dim);border-radius:6px;cursor:pointer" onclick="compactChat()">🗜 压缩</button>
+    <button class="secondary" style="font-size:12px;padding:4px 12px;border:1px solid var(--border);background:var(--panel);color:var(--dim);border-radius:6px;cursor:pointer" onclick="newChat()">+ 新建</button>
+  </header>
+  <div class="chat-messages" id="chat-messages">
+    <div class="msg system">👋 你好！我是 SmartAgent V2。可以帮你创建项目、写代码、执行命令。</div>
+  </div>
+  <div class="chat-input-area">
+    <input id="chat-input" placeholder="输入消息，Enter 发送..." onkeydown="if(event.key==='Enter')sendMessage()">
+    <button id="send-btn" onclick="sendMessage()">发送</button>
+  </div>
+</div>
+
+<!-- ===== MODELS ===== -->
+<div class="page" id="page-models">
+  <header>🔮 模型管理</header>
+  <div class="grid" id="model-cards"></div>
+</div>
+
+<!-- ===== TOOLS ===== -->
+<div class="page" id="page-tools">
+  <header>🔧 已注册工具</header>
+  <div class="grid" id="tool-cards"></div>
+</div>
+
+<!-- ===== SKILLS ===== -->
+<div class="page" id="page-skills">
+  <header style="justify-content:space-between">
+    <span>📦 Skill 管理</span>
+    <button onclick="showAddSkill()" style="padding:6px 16px;background:var(--accent);border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:13px">+ 添加</button>
+  </header>
+  <div class="table-wrap">
+    <table><thead><tr><th>名称</th><th>描述</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody id="skill-table"></tbody></table>
+  </div>
+</div>
+
+<!-- ===== TOKENS ===== -->
+<div class="page" id="page-tokens">
+  <header>📊 Token 消耗</header>
+  <div class="stats-row" id="token-stats"></div>
+  <div class="table-wrap">
+    <table><thead><tr><th>时间</th><th>提供商</th><th>模型</th><th>Prompt</th><th>Completion</th><th>合计</th></tr></thead>
+    <tbody id="token-table"></tbody></table>
+  </div>
+</div>
+
+</main>
+
+<!-- Skill Modal -->
+<div class="modal-overlay" id="skill-modal">
+  <div class="modal">
+    <h3 id="skill-modal-title">添加 Skill</h3>
+    <input id="skill-key" placeholder="Skill 标识符 (key)">
+    <textarea id="skill-desc" placeholder="技能描述"></textarea>
+    <div class="actions">
+      <button onclick="closeSkillModal()" style="background:var(--panel);border:1px solid var(--border);color:var(--text);padding:6px 16px;border-radius:6px;cursor:pointer">取消</button>
+      <button onclick="saveSkill()" class="primary" style="background:var(--accent);border:none;color:#fff;padding:6px 16px;border-radius:6px;cursor:pointer">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Approval Modal -->
+<div class="modal-overlay" id="approval-modal">
+  <div class="approval-modal">
+    <div class="icon">⚠️</div>
+    <h3 id="approval-title">危险操作需要您的确认</h3>
+    <div class="tool-name" id="approval-tool-name">execute_command</div>
+    <div class="warning" id="approval-warning">该命令将在系统中执行，请确认安全性</div>
+    <div class="args-box" id="approval-args"></div>
+    <div class="actions">
+      <button class="reject-btn" onclick="submitApproval(false)">✕ 拒绝</button>
+      <button class="approve-btn" onclick="submitApproval(true)">✓ 批准执行</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==================== STATE ====================
+// 智能 API 地址：从 /ui 访问则同源，否则用默认端口
+const API = window.location.protocol === 'file:'
+  ? 'http://127.0.0.1:8765'
+  : window.location.origin;
+let sessionId = null;
+let editingSkill = null;
+let pendingApprovalTaskId = null;  // 等待用户审批的任务 ID
+
+// ==================== NAVIGATION ====================
+function switchPage(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.querySelector('nav a[data-page="' + page + '"]').classList.add('active');
+  if (page === 'models') loadModels();
+  if (page === 'tools') loadTools();
+  if (page === 'skills') loadSkills();
+  if (page === 'tokens') loadTokens();
+}
+
+// ==================== CHAT (流式 SSE) ====================
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  const btn = document.getElementById('send-btn');
+  btn.disabled = true;
+
+  appendMsg('user', msg);
+  const think = appendMsg('system', '<span class="spinner"></span> 思考中...', 'thinking-msg');
+  let replyDiv = null;   // 累积回复的 div
+  let replyText = '';    // 累积的文本
+
+  try {
+    const res = await fetch(API + '/api/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg, session_id: sessionId, stream: true }),
+    });
+
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';  // 保留未完成行
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6).trim();
+        if (payload === '[DONE]') continue;
+
+        try {
+          const evt = JSON.parse(payload);
+          handleStreamEvent(evt);
+        } catch (e) {
+          // 忽略解析失败的行
+        }
+      }
+    }
+  } catch (e) {
+    think.remove();
+    appendMsg('error', '❌ ' + e.message);
+  }
+
+  btn.disabled = false;
+
+  // ---- 流式事件处理器 ----
+  function handleStreamEvent(evt) {
+    switch (evt.type) {
+      case 'session':
+        if (think && think.parentNode) think.remove();
+        sessionId = evt.session_id;
+        document.getElementById('chat-session').textContent = '会话: ' + sessionId;
+        break;
+
+      case 'tool_call':
+        if (think && think.parentNode) think.remove();
+        appendMsg('tool', '🔧 ' + evt.tool + (evt.iteration ? ' (step ' + evt.iteration + ')' : ''));
+        // 重新显示思考中（工具调用后继续等待）
+        think = appendMsg('system', '<span class="spinner"></span> 处理中...', 'thinking-stream');
+        break;
+
+      case 'approval_required':
+        // 需要用户审批
+        if (think && think.parentNode) think.remove();
+        pendingApprovalTaskId = evt.task_id;
+        document.getElementById('approval-tool-name').textContent = evt.tool;
+        document.getElementById('approval-args').textContent = JSON.stringify(evt.args || {}, null, 2);
+        document.getElementById('approval-modal').classList.add('show');
+        appendMsg('system', '⚠️ 等待审批：' + evt.tool + '...', 'approval-pending');
+        break;
+
+      case 'approval_result':
+        // 关闭审批弹窗
+        document.getElementById('approval-modal').classList.remove('show');
+        pendingApprovalTaskId = null;
+        if (document.querySelector('.approval-pending')) {
+          document.querySelector('.approval-pending').remove();
+        }
+        if (evt.approved) {
+          appendMsg('tool', '✅ 已批准 ' + evt.tool + '，正在执行...');
+        } else {
+          appendMsg('error', '🚫 已拒绝 ' + evt.tool);
+        }
+        // 重新显示等待
+        think = appendMsg('system', '<span class="spinner"></span> 处理中...', 'thinking-stream');
+        break;
+
+      case 'tool_error':
+        appendMsg('error', '⚠ ' + evt.tool + ': ' + (evt.error || '').substring(0, 150));
+        break;
+
+      case 'finish':
+        if (think && think.parentNode) think.remove();
+        appendMsg('system', '✅ ' + (evt.summary || '任务完成'));
+        break;
+
+      case 'reply':
+        if (think && think.parentNode) think.remove();
+        if (!replyDiv) {
+          replyDiv = appendMsg('assistant', '');
+        }
+        replyText += evt.content;
+        replyDiv.innerHTML = renderContent(replyText);
+        document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
+        break;
+    }
+  }
+}
+
+function appendMsg(role, content, id) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + role;
+  if (id) d.id = id;
+  if (role === 'tool') d.innerHTML = '<div class="label">工具调用</div>' + esc(content);
+  else d.innerHTML = renderContent(content);
+  document.getElementById('chat-messages').appendChild(d);
+  const mc = document.getElementById('chat-messages');
+  mc.scrollTop = mc.scrollHeight;
+  return d;
+}
+
+function esc(s) { const e = document.createElement('div'); e.textContent = s; return e.innerHTML; }
+
+// 将消息中的 ![](path) 转为 <img>，本地路径自动映射到 /files/
+function renderContent(text) {
+  const safe = esc(text);
+  // 匹配 ![alt](path)
+  return safe.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, path) => {
+    let url = path;
+    // 本地绝对路径 → /files/filename
+    if (/^[A-Za-z]:[\\/]/.test(path)) {
+      const name = path.replace(/\\/g, '/').split('/').pop();
+      url = '/files/' + encodeURIComponent(name);
+    }
+    return `<img src="${url}" alt="${alt}">`;
+  });
+}
+
+function newChat() {
+  sessionId = null;
+  document.getElementById('chat-session').textContent = '新会话';
+  document.getElementById('chat-messages').innerHTML = '<div class="msg system">👋 新会话开始。</div>';
+}
+
+async function compactChat() {
+  if (!sessionId) return alert('请先开始对话');
+  const res = await fetch(API + '/api/chat/sessions/' + sessionId + '/compact', {method:'POST'});
+  const data = await res.json();
+  if (data.ok) appendMsg('system', '🗜 已压缩: ' + data.before + ' → ' + data.after + ' 条消息');
+  else appendMsg('system', '⚠ ' + (data.error || '压缩失败'));
+}
+
+// ==================== MODELS ====================
+async function loadModels() {
+  const res = await fetch(API + '/api/model');
+  const data = await res.json();
+  document.getElementById('model-cards').innerHTML = data.providers.map(p => `
+    <div class="card" style="${p.key===data.current_provider?'border-color:var(--accent)':''}">
+      <h3>${p.name} ${p.key===data.current_provider?'✅':''}</h3>
+      <p>默认: ${p.default_model}<br>可用: ${p.models.join(', ')}</p>
+      <div class="row">
+        <span class="tag">${p.has_key?'已配置 Key':'未配置 Key'}</span>
+        <button class="${p.key===data.current_provider?'':'primary'}" onclick="switchModel('${p.key}')">${p.key===data.current_provider?'当前':'切换'}</button>
+      </div>
+      <input style="width:100%;margin-top:10px;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px" placeholder="自定义 API Key..." onchange="setKey('${p.key}',this.value)">
+    </div>`).join('');
+}
+
+async function switchModel(p) {
+  await fetch(API+'/api/model/switch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:p})});
+  loadModels();
+}
+async function setKey(p,k) {
+  if(!k)return;
+  await fetch(API+'/api/model/switch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:p,api_key:k})});
+  loadModels();
+}
+
+// ==================== TOOLS ====================
+async function loadTools() {
+  const res = await fetch(API + '/api/tools');
+  const data = await res.json();
+  document.getElementById('tool-count').textContent = data.length;
+  document.getElementById('tool-cards').innerHTML = data.map(t => `
+    <div class="card">
+      <h3>${t.name}</h3>
+      <p>${t.description}</p>
+      <div class="row"><span class="tag">${t.module}.${t.function_name}</span></div>
+    </div>`).join('');
+}
+
+// ==================== SKILLS ====================
+async function loadSkills() {
+  const res = await fetch(API + '/api/skills');
+  const data = await res.json();
+  document.getElementById('skill-count').textContent = data.filter(s=>s.enabled).length;
+  document.getElementById('skill-table').innerHTML = data.map(s => `
+    <tr>
+      <td><strong>${s.key}</strong></td>
+      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.description}</td>
+      <td><span class="toggle ${s.enabled?'on':''}" onclick="toggleSkill('${s.key}',${!s.enabled})"></span></td>
+      <td>
+        <button onclick="editSkill('${s.key}','${s.description.replace(/'/g,"\\'")}')" style="padding:4px 10px;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:4px;cursor:pointer">✏️</button>
+        <button onclick="delSkill('${s.key}')" style="padding:4px 10px;background:var(--red);border:none;color:#fff;border-radius:4px;cursor:pointer;margin-left:4px">🗑</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function toggleSkill(key, en) {
+  await fetch(API+'/api/skills/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:en})});
+  loadSkills();
+}
+function showAddSkill() {
+  editingSkill=null;
+  document.getElementById('skill-modal-title').textContent='添加 Skill';
+  document.getElementById('skill-key').value='';
+  document.getElementById('skill-key').disabled=false;
+  document.getElementById('skill-desc').value='';
+  document.getElementById('skill-modal').classList.add('show');
+}
+function editSkill(key, desc) {
+  editingSkill=key;
+  document.getElementById('skill-modal-title').textContent='编辑: '+key;
+  document.getElementById('skill-key').value=key;
+  document.getElementById('skill-key').disabled=true;
+  document.getElementById('skill-desc').value=desc;
+  document.getElementById('skill-modal').classList.add('show');
+}
+function closeSkillModal() { document.getElementById('skill-modal').classList.remove('show'); }
+async function saveSkill() {
+  const key=document.getElementById('skill-key').value.trim();
+  const desc=document.getElementById('skill-desc').value.trim();
+  if(!key||!desc) return alert('请填写完整');
+  if(editingSkill){
+    await fetch(API+'/api/skills/'+editingSkill,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({description:desc})});
+  } else {
+    const r=await fetch(API+'/api/skills',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,description:desc})});
+    const d=await r.json();
+    if(!d.ok) return alert(d.error);
+  }
+  closeSkillModal();
+  loadSkills();
+}
+async function delSkill(key) {
+  if(!confirm('确定删除 '+key+'？')) return;
+  await fetch(API+'/api/skills/'+key,{method:'DELETE'});
+  loadSkills();
+}
+
+// ==================== APPROVAL ====================
+async function submitApproval(approved) {
+  document.getElementById('approval-modal').classList.remove('show');
+  const taskId = pendingApprovalTaskId;
+  pendingApprovalTaskId = null;
+  if (!taskId) return;
+
+  try {
+    await fetch(API + '/api/chat/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task_id: taskId, approved: approved }),
+    });
+  } catch (e) {
+    console.error('Approval request failed:', e);
+  }
+}
+
+// ==================== TOKENS ====================
+async function loadTokens() {
+  const [sr,rr] = await Promise.all([fetch(API+'/api/tokens/stats'), fetch(API+'/api/tokens/recent?limit=20')]);
+  const s = await sr.json();
+  const r = await rr.json();
+  document.getElementById('token-stats').innerHTML = `
+    <div class="stat-box"><div class="num">${s.calls}</div><div class="label">API 调用</div></div>
+    <div class="stat-box"><div class="num">${fmt(s.total_all)}</div><div class="label">总 Token</div></div>
+    <div class="stat-box"><div class="num">${fmt(s.total_prompt)}</div><div class="label">Prompt</div></div>
+    <div class="stat-box"><div class="num">${fmt(s.total_completion)}</div><div class="label">Completion</div></div>`;
+  document.getElementById('token-table').innerHTML = r.map(e => `
+    <tr>
+      <td>${new Date(e.timestamp).toLocaleString('zh-CN')}</td>
+      <td>${e.provider}</td><td>${e.model}</td>
+      <td>${fmt(e.prompt_tokens)}</td><td>${fmt(e.completion_tokens)}</td>
+      <td><strong>${fmt(e.total_tokens)}</strong></td>
+    </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--dim)">暂无记录</td></tr>';
+}
+function fmt(n) { return n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':String(n); }
+
+// ==================== INIT ====================
+loadModels(); loadTools(); loadSkills(); loadTokens();
+</script>
+</body>
+</html>

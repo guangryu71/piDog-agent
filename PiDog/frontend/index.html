@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PiDog — SmartAgent V2</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="app">
+    <!-- ============ 左侧边栏 ============ -->
+    <aside class="sidebar">
+        <div class="sidebar-logo">
+            🐕 PiDog
+            <span>SmartAgent V2</span>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-item active" data-page="chat">
+                <span class="icon">💬</span> Chat
+            </div>
+            <div class="nav-item" data-page="model">
+                <span class="icon">🧠</span> Model
+            </div>
+            <div class="nav-item" data-page="tools">
+                <span class="icon">🔧</span> Tools
+            </div>
+            <div class="nav-item" data-page="skills">
+                <span class="icon">📦</span> Skills
+            </div>
+            <div class="nav-item" data-page="tokens">
+                <span class="icon">📊</span> Tokens
+            </div>
+        </nav>
+        <div style="padding:12px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--text-dim);">
+            v1.0.0 · <span id="status-indicator" style="color:var(--green);">●</span> connected
+        </div>
+    </aside>
+
+    <!-- ============ 主内容区 ============ -->
+    <main class="main" id="main-content">
+        <!-- 动态切换各页面 -->
+    </main>
+</div>
+
+<!-- ============ Modal (全局复用) ============ -->
+<div class="modal-overlay" id="modal-overlay">
+    <div class="modal" id="modal-content"></div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/chat.js"></script>
+<script src="js/model.js"></script>
+<script src="js/tools.js"></script>
+<script src="js/skills.js"></script>
+<script src="js/tokens.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
