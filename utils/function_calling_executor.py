@@ -86,11 +86,12 @@ class FunctionCallingExecutor:
         text = getattr(message, "content", None)
         if text and text.strip():
             if hasattr(choice, "finish_reason") and choice.finish_reason == "tool_calls":
-                # 理论上不会到这里，但兜底
                 return [], None
             return [], text.strip()
 
         return [], None
+
+    def execute_tool_call(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
         """
         执行单个 tool_call
 
@@ -183,46 +184,6 @@ class FunctionCallingExecutor:
                 break
 
         return results
-
-    @staticmethod
-    def extract_tool_calls(response) -> Tuple[Optional[List[Dict]], Optional[str]]:
-        """
-        从模型响应中提取 tool_calls 和文本内容
-
-        Args:
-            response: OpenAI chat completion response 对象
-
-        Returns:
-            (tool_calls_list, content_text)
-            - 如果有 tool_calls，返回 (tool_calls, None)
-            - 如果有文本内容，返回 (None, content_text)
-        """
-        choice = response.choices[0]
-        message = choice.message
-
-        # 检查是否有 tool_calls
-        if hasattr(message, "tool_calls") and message.tool_calls:
-            tool_calls = []
-            for tc in message.tool_calls:
-                tool_calls.append({
-                    "id": tc.id,
-                    "type": tc.type,
-                    "function": {
-                        "name": tc.function.name,
-                        "arguments": tc.function.arguments,
-                    }
-                })
-            return tool_calls, None
-
-        # 普通文本响应
-        content = message.content or ""
-        finish_reason = choice.finish_reason
-
-        # 检查是否是"结束对话"的信号
-        if finish_reason == "stop" and not content.strip():
-            return None, None
-
-        return None, content
 
     @staticmethod
     def tool_results_to_messages(tool_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

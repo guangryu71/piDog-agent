@@ -178,6 +178,15 @@ class BlenderMCPClient:
                         last_error = error_msg
                         continue  # 继续尝试下一种格式
                     
+                    # ---- 优先检测 Blender 返回的 status: "error" ----
+                    if response.get("status") == "error":
+                        error_msg = response.get("message", response.get("error", str(response)))
+                        return {
+                            "status": "error",
+                            "error": f"Blender执行错误(格式{i+1}): {error_msg}",
+                            "raw_response": response_str,
+                        }
+                    
                     # 成功！提取结果
                     # Blender MCP 返回格式: {"executed": true, "result": "..."}
                     if response.get("executed") == True or response.get("status") == "success":

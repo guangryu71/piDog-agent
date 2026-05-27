@@ -26,6 +26,8 @@ from services.token_service import record_usage
 MAX_CONSECUTIVE_FAILURES = 3
 TOOL_RESULT_MAX_CHARS = 1000
 MAX_SAME_TOOL_CONSECUTIVE = 2  # 同一工具连续调用次数上限（超过则注入提示）
+AUTO_COMPACT_THRESHOLD = 40    # 消息数超过此值自动压缩
+AUTO_COMPACT_KEEP = 8          # 压缩后保留最近 N 条消息
 SESSION_DIR = os.path.join(PROJECT_ROOT, "PiDog", "backend", "sessions")
 
 # Blender 等"发后即忘"类工具：调用后只收到发送确认，无法获取执行结果
@@ -98,14 +100,41 @@ TOOLS_REQUIRING_APPROVAL = {"execute_command"}
 
 
 def _load_session_from_file(session_id: str) -> List[Dict]:
-    """从文件加载会话"""
+    """从文件加载会话，自动清理孤儿 tool_calls"""
     path = os.path.join(SESSION_DIR, f"{session_id}.json")
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                messages = json.load(f)
         except Exception:
-            pass
+            return []
+
+        # ---- 清理孤儿 tool_calls：修复崩溃遗留的损坏会话 ----
+        cleaned = []
+        pending_call_ids = set()
+
+        for msg in messages:
+            role = msg.get("role", "")
+            if role == "assistant" and msg.get("tool_calls"):
+                # 记录本消息的 tool_call_ids，后面必须有 tool 消息响应
+                for tc in msg["tool_calls"]:
+                    pending_call_ids.add(tc.get("id", ""))
+                cleaned.append(msg)
+            elif role == "tool":
+                call_id = msg.get("tool_call_id", "")
+                pending_call_ids.discard(call_id)
+                cleaned.append(msg)
+            else:
+                cleaned.append(msg)
+
+        # 如果还有未响应的 tool_call_ids，移除最后一条带 tool_calls 的 assistant 消息
+        if pending_call_ids:
+            for i in range(len(cleaned) - 1, -1, -1):
+                if cleaned[i].get("role") == "assistant" and cleaned[i].get("tool_calls"):
+                    del cleaned[i]
+                    break
+
+        return cleaned
     return []
 
 
@@ -216,9 +245,40 @@ def chat_sync(session_id: str, user_message: str, max_iterations: int = 15) -> d
             assistant_msg = {"role": "assistant", "content": None, "tool_calls": tool_calls}
             messages.append(assistant_msg)
 
-            results = executor.execute_tool_calls(tool_calls)
+            try:
+                results = executor.execute_tool_calls(tool_calls)
+            except Exception as exec_err:
+                # 工具执行整体崩溃：为每个 tool_call 生成错误结果，保证消息完整性
+                results = []
+                for tc in tool_calls:
+                    results.append({
+                        "tool_call_id": tc.get("id", ""),
+                        "role": "tool",
+                        "content": f"[ERROR] 工具执行失败: {exec_err}",
+                        "_finish": False,
+                    })
 
-            for i, r in enumerate(results):
+            # ---- 防御：确保 results 与 tool_calls 严格对齐 ----
+            # 按 tool_call_id 建立索引，防止执行器返回空列表或不匹配
+            results_by_id: Dict[str, Dict] = {}
+            for r in results:
+                results_by_id[r.get("tool_call_id", "")] = r
+
+            aligned_results = []
+            for tc in tool_calls:
+                call_id = tc.get("id", "")
+                if call_id in results_by_id:
+                    aligned_results.append(results_by_id[call_id])
+                else:
+                    # 结果缺失：生成占位错误消息，保证消息完整性
+                    aligned_results.append({
+                        "tool_call_id": call_id,
+                        "role": "tool",
+                        "content": f"[ERROR] 工具未返回结果: {tc.get('function', {}).get('name', '?')}",
+                        "_finish": False,
+                    })
+
+            for i, r in enumerate(aligned_results):
                 func_name = tool_calls[i]["function"]["name"] if i < len(tool_calls) else "?"
                 tool_names_called.append(func_name)
 
@@ -272,6 +332,8 @@ def chat_sync(session_id: str, user_message: str, max_iterations: int = 15) -> d
         else:
             break
 
+    # 自动压缩后再保存
+    messages = _auto_compact_if_needed(sid, messages)
     _save_session_to_file(sid, messages)
 
     if task_finished:
@@ -343,11 +405,12 @@ async def chat_stream(session_id: str, user_message: str, max_iterations: int = 
             assistant_msg = {"role": "assistant", "content": None, "tool_calls": tool_calls}
             messages.append(assistant_msg)
 
-            # ---- 审批检查：危险工具需用户确认后才执行 ----
+            # ---- 审批检查 + 安全执行：每步用 try/except 防崩溃 ----
             results = []
             for i, tc in enumerate(tool_calls):
                 func_name = tc["function"]["name"]
                 func_args = json.loads(tc.get("function", {}).get("arguments", "{}"))
+                call_id = tc.get("id", f"call_{iteration}_{i}")
 
                 if func_name in TOOLS_REQUIRING_APPROVAL:
                     task_id = f"{sid}-{iteration}-{i}"
@@ -356,21 +419,54 @@ async def chat_stream(session_id: str, user_message: str, max_iterations: int = 
                     approved = await request_approval_async(task_id, func_name, func_args)
                     if approved:
                         yield f"data: {json.dumps({'type': 'approval_result', 'task_id': task_id, 'approved': True, 'tool': func_name})}\n\n"
-                        # 只执行当前这一个工具
-                        single_result = executor.execute_tool_calls([tc])
-                        results.extend(single_result)
+                        try:
+                            results.extend(executor.execute_tool_calls([tc]))
+                        except Exception as exec_err:
+                            results.append({
+                                "tool_call_id": call_id,
+                                "role": "tool",
+                                "content": f"[ERROR] 工具执行失败: {exec_err}",
+                                "_finish": False,
+                            })
                     else:
                         yield f"data: {json.dumps({'type': 'approval_result', 'task_id': task_id, 'approved': False, 'tool': func_name})}\n\n"
-                        # 生成"已拒绝"的模拟结果
                         results.append({
-                            "tool_call_id": tc.get("id", f"call_{i}"),
+                            "tool_call_id": call_id,
                             "content": f"[USER REJECTED] 用户拒绝了 {func_name} 操作。请换一种方式完成任务，或调用 finish_task 结束。",
                             "_finish": False,
                         })
                 else:
-                    results.extend(executor.execute_tool_calls([tc]))
+                    try:
+                        results.extend(executor.execute_tool_calls([tc]))
+                    except Exception as exec_err:
+                        results.append({
+                            "tool_call_id": call_id,
+                            "role": "tool",
+                            "content": f"[ERROR] 工具执行失败: {exec_err}",
+                            "_finish": False,
+                        })
 
-            for i, r in enumerate(results):
+            # ---- 防御：确保 results 与 tool_calls 严格对齐 ----
+            # 按 tool_call_id 建立索引，防止执行器返回空列表或不匹配
+            results_by_id: Dict[str, Dict] = {}
+            for r in results:
+                results_by_id[r.get("tool_call_id", "")] = r
+
+            aligned_results = []
+            for tc in tool_calls:
+                call_id = tc.get("id", "")
+                if call_id in results_by_id:
+                    aligned_results.append(results_by_id[call_id])
+                else:
+                    # 结果缺失：生成占位错误消息，保证消息完整性
+                    aligned_results.append({
+                        "tool_call_id": call_id,
+                        "role": "tool",
+                        "content": f"[ERROR] 工具未返回结果: {tc.get('function', {}).get('name', '?')}",
+                        "_finish": False,
+                    })
+
+            for i, r in enumerate(aligned_results):
                 func_name = tool_calls[i]["function"]["name"] if i < len(tool_calls) else "?"
 
                 # 同工具连续调用检测
@@ -413,7 +509,7 @@ async def chat_stream(session_id: str, user_message: str, max_iterations: int = 
                         _final_reply = finish_args.get("reply", finish_args.get("summary", ""))
                     except Exception:
                         _final_reply = ""
-                    yield f"data: {json.dumps({'type': 'finish', 'summary': content[:500]})}\n\n"
+                    yield f"data: {json.dumps({'type': 'finish', 'summary': content[:500], 'reply': _final_reply})}\n\n"
 
                 messages.append({"role": "tool", "tool_call_id": r["tool_call_id"], "content": content})
 
@@ -424,6 +520,8 @@ async def chat_stream(session_id: str, user_message: str, max_iterations: int = 
         else:
             break
 
+    # 自动压缩后再保存
+    messages = _auto_compact_if_needed(sid, messages)
     _save_session_to_file(sid, messages)
     yield "data: [DONE]\n\n"
 
@@ -465,6 +563,52 @@ def delete_session(session_id: str) -> bool:
     return False
 
 
+def _auto_compact_if_needed(sid: str, messages: List[Dict]) -> List[Dict]:
+    """自动压缩：消息数超过阈值时静默压缩，返回压缩后的消息列表"""
+    if len(messages) <= AUTO_COMPACT_THRESHOLD:
+        return messages
+
+    try:
+        llm = LLMChat(
+            api_key=AppState.get_api_key(),
+            base_url=AppState.get_base_url(),
+            model=AppState.get_effective_model(),
+            max_tokens=500, temperature=0.3,
+        )
+
+        lines = []
+        for m in messages:
+            role = m.get("role", "")
+            if role == "user":
+                lines.append(f"User: {m.get('content', '')[:200]}")
+            elif role == "assistant":
+                tcs = m.get("tool_calls")
+                if tcs:
+                    names = [tc.get("function", {}).get("name", "?") for tc in tcs]
+                    lines.append(f"Assistant: called {', '.join(names)}")
+                elif m.get("content"):
+                    lines.append(f"Assistant: {m['content'][:200]}")
+
+        summary = llm.chat_no_memory(
+            messages=[
+                {"role": "system", "content": "Summarize this conversation: what was built, key decisions, current state. Under 300 tokens. Bullet points."},
+                {"role": "user", "content": "\n".join(lines)},
+            ],
+            temperature=0.3, max_tokens=400,
+        )
+
+        compressed = [{"role": "system", "content": f"[AUTO-COMPACTED]\n{summary}"}]
+        keep = messages[-AUTO_COMPACT_KEEP:] if len(messages) > AUTO_COMPACT_KEEP else messages
+        compressed.extend(keep)
+
+        # 更新内存缓存和文件
+        _sessions[sid]["messages"] = compressed
+        _save_session_to_file(sid, compressed)
+        return compressed
+    except Exception:
+        return messages  # 压缩失败不丢数据，原样返回
+
+
 def compact_session(session_id: str, llm: LLMChat = None) -> dict:
     """压缩会话"""
     sid = _get_or_create_session(session_id)
@@ -503,7 +647,7 @@ def compact_session(session_id: str, llm: LLMChat = None) -> dict:
             temperature=0.3, max_tokens=400,
         )
         compressed = [{"role": "system", "content": f"[COMPACTED]\n{summary}"}]
-        keep = messages[-6:] if len(messages) > 6 else messages
+        keep = messages[-AUTO_COMPACT_KEEP:] if len(messages) > AUTO_COMPACT_KEEP else messages
         compressed.extend(keep)
         _sessions[sid]["messages"] = compressed
         _save_session_to_file(sid, compressed)

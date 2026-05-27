@@ -120,6 +120,7 @@ td { color: var(--text); }
     <span>💬 Agent 对话</span>
     <span style="margin-left:auto;font-size:13px;color:var(--dim)" id="chat-session">新会话</span>
     <button class="secondary" style="font-size:12px;padding:4px 12px;border:1px solid var(--border);background:var(--panel);color:var(--dim);border-radius:6px;cursor:pointer" onclick="compactChat()">🗜 压缩</button>
+    <button class="secondary" style="font-size:12px;padding:4px 12px;border:1px solid var(--border);background:var(--panel);color:var(--red);border-radius:6px;cursor:pointer" onclick="clearMemory()">🗑 清空</button>
     <button class="secondary" style="font-size:12px;padding:4px 12px;border:1px solid var(--border);background:var(--panel);color:var(--dim);border-radius:6px;cursor:pointer" onclick="newChat()">+ 新建</button>
   </header>
   <div class="chat-messages" id="chat-messages">
@@ -320,7 +321,12 @@ async function sendMessage() {
 
       case 'finish':
         if (think && think.parentNode) think.remove();
+        // 技术摘要（折叠或淡化）
         appendMsg('system', '✅ ' + (evt.summary || '任务完成'));
+        // 用户可见回复：优先 reply，次选 summary
+        if (evt.reply && evt.reply.trim()) {
+          appendMsg('assistant', renderContent(evt.reply));
+        }
         break;
 
       case 'reply':
@@ -369,6 +375,13 @@ function newChat() {
   sessionId = null;
   document.getElementById('chat-session').textContent = '新会话';
   document.getElementById('chat-messages').innerHTML = '<div class="msg system">👋 新会话开始。</div>';
+}
+
+async function clearMemory() {
+  if (!sessionId) return alert('当前无会话');
+  if (!confirm('确定清空当前会话的全部记忆？此操作不可撤销。')) return;
+  await fetch(API + '/api/chat/sessions/' + sessionId, { method: 'DELETE' });
+  newChat();
 }
 
 async function compactChat() {

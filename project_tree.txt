@@ -1,0 +1,396 @@
+卷 新加卷 的文件夹 PATH 列表
+卷序列号为 F6E7-D639
+D:.
+|   .gitignore
+|   agent_v2.py
+|   clear_history.py
+|   confing.json
+|   project_tree.txt
+|   README.en.md
+|   README.md
+|   skills_locator.json
+|   test_function_calling.py
+|   
++---.idea
+|       .gitignore
+|       misc.xml
+|       modules.xml
+|       smart_agent_new.iml
+|       vcs.xml
+|       workspace.xml
+|       
++---.pytest_cache
+|   |   .gitignore
+|   |   CACHEDIR.TAG
+|   |   README.md
+|   |   
+|   \---v
+|       \---cache
+|               lastfailed
+|               nodeids
+|               
++---agents
+|   +---checker
+|   |   |   checker.md
+|   |   |   dynamic_injection.py
+|   |   |   
+|   |   \---__pycache__
+|   |           dynamic_injection.cpython-311.pyc
+|   |           dynamic_injection.cpython-39.pyc
+|   |           
+|   +---summarizer
+|   |   |   dynamic_injection.py
+|   |   |   summarizer.md
+|   |   |   
+|   |   \---__pycache__
+|   |           dynamic_injection.cpython-311.pyc
+|   |           dynamic_injection.cpython-39.pyc
+|   |           
+|   +---thinker
+|   |   |   dynamic_injection.py
+|   |   |   thinker.md
+|   |   |   
+|   |   \---__pycache__
+|   |           dynamic_injection.cpython-311.pyc
+|   |           dynamic_injection.cpython-39.pyc
+|   |           
+|   \---workflower
+|       |   dynamic_injection.py
+|       |   workflower.md
+|       |   
+|       \---__pycache__
+|               dynamic_injection.cpython-311.pyc
+|               dynamic_injection.cpython-39.pyc
+|               
++---backups
+|       app_1779702179.py
+|       student_1779702861.py
+|       _test_fc_output_1779698737.txt
+|       _test_fc_output_1779699061.txt
+|       _test_fc_output_1779699980.txt
+|       _test_fc_output_1779701127.txt
+|       _test_fc_output_1779701809.txt
+|       _test_fc_output_1779702062.txt
+|       _test_fc_output_1779703578.txt
+|       _test_fc_output_1779703801.txt
+|       _test_fc_output_1779708493.txt
+|       _test_fc_output_1779708499.txt
+|       
++---docs
++---examples
++---logs
+|       2026-05-24_20-57-09.log
+|       2026-05-24_20-57-10.log
+|       2026-05-24_20-57-38.log
+|       2026-05-24_21-07-42.log
+|       2026-05-24_21-07-43.log
+|       2026-05-24_21-29-20.log
+|       2026-05-25_14-02-05.log
+|       2026-05-25_14-09-11.log
+|       2026-05-25_14-09-12.log
+|       2026-05-25_14-19-49.log
+|       2026-05-25_14-25-44.log
+|       2026-05-25_14-28-02.log
+|       2026-05-25_14-48-07.log
+|       2026-05-25_14-48-08.log
+|       2026-05-25_17-59-33.log
+|       2026-05-25_18-46-55.log
+|       2026-05-26_10-44-17.log
+|       2026-05-26_14-40-33.log
+|       2026-05-26_16-28-28.log
+|       
++---models
+|   \---llm
+|       |   llm_chat.py
+|       |   
+|       \---__pycache__
+|               llm_chat.cpython-311.pyc
+|               llm_chat.cpython-39.pyc
+|               
++---PiDog
+|   +---backend
+|   |   |   app.py
+|   |   |   config.py
+|   |   |   requirements.txt
+|   |   |   start.bat
+|   |   |   token_usage.jsonl
+|   |   |   
+|   |   +---api_schemas
+|   |   |   |   schemas.py
+|   |   |   |   __init__.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           schemas.cpython-39.pyc
+|   |   |           __init__.cpython-39.pyc
+|   |   |           
+|   |   +---routers
+|   |   |   |   chat.py
+|   |   |   |   model.py
+|   |   |   |   skill.py
+|   |   |   |   token.py
+|   |   |   |   tool.py
+|   |   |   |   __init__.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           chat.cpython-39.pyc
+|   |   |           model.cpython-39.pyc
+|   |   |           skill.cpython-39.pyc
+|   |   |           token.cpython-39.pyc
+|   |   |           tool.cpython-39.pyc
+|   |   |           __init__.cpython-39.pyc
+|   |   |           
+|   |   +---services
+|   |   |   |   agent_service.py
+|   |   |   |   model_service.py
+|   |   |   |   skill_service.py
+|   |   |   |   token_service.py
+|   |   |   |   tool_service.py
+|   |   |   |   __init__.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           agent_service.cpython-311.pyc
+|   |   |           agent_service.cpython-39.pyc
+|   |   |           model_service.cpython-39.pyc
+|   |   |           skill_service.cpython-39.pyc
+|   |   |           token_service.cpython-39.pyc
+|   |   |           tool_service.cpython-39.pyc
+|   |   |           __init__.cpython-39.pyc
+|   |   |           
+|   |   +---sessions
+|   |   |       000daaf9.json
+|   |   |       47beebfc.json
+|   |   |       4e0e1662.json
+|   |   |       86ed17dc.json
+|   |   |       89da009c.json
+|   |   |       b8b3f163.json
+|   |   |       f9645d85.json
+|   |   |       fbbcc351.json
+|   |   |       
+|   |   \---__pycache__
+|   |           app.cpython-39.pyc
+|   |           config.cpython-39.pyc
+|   |           
+|   +---frontend
+|   |   |   index.html
+|   |   |   
+|   |   +---css
+|   |   |       style.css
+|   |   |       
+|   |   \---js
+|   |           api.js
+|   |           app.js
+|   |           chat.js
+|   |           model.js
+|   |           skills.js
+|   |           tokens.js
+|   |           tools.js
+|   |           
+|   \---front_end
+|           index.html
+|           
++---skills
+|   +---skill_blender_controler
+|   |   |   README.md
+|   |   |   skill.yaml
+|   |   |   __init__.py
+|   |   |   
+|   |   +---cods
+|   |   +---tools
+|   |   |   |   blender_mcp_client_v2.py
+|   |   |   |   __init__.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           blender_mcp_client_v2.cpython-39.pyc
+|   |   |           __init__.cpython-311.pyc
+|   |   |           __init__.cpython-39.pyc
+|   |   |           
+|   |   \---__pycache__
+|   |           test_blender_diagnostic.cpython-39-pytest-8.4.2.pyc
+|   |           __init__.cpython-311.pyc
+|   |           __init__.cpython-39.pyc
+|   |           
+|   +---skill_img_handler
+|   |   |   README.md
+|   |   |   requirements.txt
+|   |   |   skill.yaml
+|   |   |   __init__.py
+|   |   |   
+|   |   +---tools
+|   |   |   |   image_handler.py
+|   |   |   |   __init__.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           image_analyzer.cpython-311.pyc
+|   |   |           image_converter.cpython-311.pyc
+|   |   |           image_editor.cpython-311.pyc
+|   |   |           image_generator.cpython-311.pyc
+|   |   |           image_handler.cpython-311.pyc
+|   |   |           image_handler.cpython-39.pyc
+|   |   |           image_recognizer.cpython-311.pyc
+|   |   |           ocr_extractor.cpython-311.pyc
+|   |   |           __init__.cpython-311.pyc
+|   |   |           __init__.cpython-39.pyc
+|   |   |           
+|   |   \---__pycache__
+|   |           __init__.cpython-311.pyc
+|   |           __init__.cpython-39.pyc
+|   |           
+|   +---skill_Project_Development_Engineer
+|   |       README.md
+|   |       skill.yaml
+|   |       
+|   +---skill_web_controler
+|   |   |   README.md
+|   |   |   skill.yaml
+|   |   |   __init__.py
+|   |   |   
+|   |   +---tools
+|   |   |   |   qwenpaw_client.py
+|   |   |   |   __init__.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           browser_controller.cpython-311.pyc
+|   |   |           qwenpaw_client.cpython-311.pyc
+|   |   |           qwenpaw_client.cpython-39.pyc
+|   |   |           web_controller.cpython-311.pyc
+|   |   |           web_controller.cpython-39.pyc
+|   |   |           __init__.cpython-311.pyc
+|   |   |           __init__.cpython-39.pyc
+|   |   |           
+|   |   \---__pycache__
+|   |           __init__.cpython-311.pyc
+|   |           __init__.cpython-39.pyc
+|   |           
+|   +---skill_wps_controler
+|   \---__pycache__
+|           final_verification.cpython-39-pytest-8.4.2.pyc
+|           
++---skill_manager
++---test
+|   |   test1.py
+|   |   test_checker_functionality.py
+|   |   test_history_format.py
+|   |   test_thinker_json.py
+|   |   test_workflower_json.py
+|   |   
+|   \---__pycache__
+|           test_checker_functionality.cpython-311-pytest-9.0.3.pyc
+|           
++---utils
+|   |   function_calling_executor.py
+|   |   session_manager.py
+|   |   tool_registry.py
+|   |   
+|   +---blender_controler
+|   |   |   blender_mcp_client_v2.py
+|   |   |   __init__.py
+|   |   |   
+|   |   \---__pycache__
+|   |           blender_mcp_client_v2.cpython-311.pyc
+|   |           blender_mcp_client_v2.cpython-39.pyc
+|   |           __init__.cpython-39.pyc
+|   |           
+|   +---execute
+|   |   |   execute.py
+|   |   |   
+|   |   \---__pycache__
+|   |           execute.cpython-311.pyc
+|   |           execute.cpython-39.pyc
+|   |           
+|   +---files_controler
+|   |   |   README.md
+|   |   |   __init__.py
+|   |   |   
+|   |   +---tools
+|   |   |   |   file_reader.py
+|   |   |   |   file_writer.py
+|   |   |   |   __init__.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           file_reader.cpython-311.pyc
+|   |   |           file_reader.cpython-39.pyc
+|   |   |           file_writer.cpython-311.pyc
+|   |   |           file_writer.cpython-39.pyc
+|   |   |           __init__.cpython-311.pyc
+|   |   |           __init__.cpython-39.pyc
+|   |   |           
+|   |   \---__pycache__
+|   |           __init__.cpython-311.pyc
+|   |           __init__.cpython-39.pyc
+|   |           
+|   +---img_handler
+|   |   |   image_handler.py
+|   |   |   __init__.py
+|   |   |   
+|   |   \---__pycache__
+|   |           image_handler.cpython-39.pyc
+|   |           __init__.cpython-39.pyc
+|   |           
+|   +---json_analysis
+|   |   |   analysis.py
+|   |   |   
+|   |   \---__pycache__
+|   |           analysis.cpython-311.pyc
+|   |           analysis.cpython-39.pyc
+|   |           
+|   +---shell_controler
+|   |   |   README.md
+|   |   |   __init__.py
+|   |   |   
+|   |   +---tools
+|   |   |   |   command_executor.py
+|   |   |   |   __init__.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           command_executor.cpython-311.pyc
+|   |   |           command_executor.cpython-39.pyc
+|   |   |           __init__.cpython-39.pyc
+|   |   |           
+|   |   \---__pycache__
+|   |           __init__.cpython-39.pyc
+|   |           
+|   +---web_controler
+|   |   |   qwenpaw_client.py
+|   |   |   __init__.py
+|   |   |   
+|   |   \---__pycache__
+|   |           qwenpaw_client.cpython-39.pyc
+|   |           __init__.cpython-39.pyc
+|   |           
+|   \---__pycache__
+|           function_calling_executor.cpython-311.pyc
+|           function_calling_executor.cpython-39.pyc
+|           session_manager.cpython-39.pyc
+|           tool_registry.cpython-311.pyc
+|           tool_registry.cpython-39.pyc
+|           
++---workplace
+|   |   generated_1779701373.png
+|   |   hot_news.txt
+|   |   snow_mountain.png
+|   |   今日新闻.txt
+|   |   
+|   \---student_management
+|       |   app.py
+|       |   
+|       +---models
+|       |   |   student.py
+|       |   |   
+|       |   \---__pycache__
+|       |           student.cpython-39.pyc
+|       |           
+|       +---routes
+|       |   |   students.py
+|       |   |   
+|       |   \---__pycache__
+|       |           students.cpython-39.pyc
+|       |           
+|       +---static
+|       +---templates
+|       \---__pycache__
+|               app.cpython-39.pyc
+|               
+\---__pycache__
+        agent.cpython-311.pyc
+        agent_v2.cpython-311.pyc
+        
