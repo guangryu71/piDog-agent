@@ -93,18 +93,28 @@ def read_file_full(
             encoding = config.get('default_encoding', 'utf-8')
         except Exception:
             encoding = 'utf-8'
-    
-    # 处理相对路径，确保相对于工作空间路径
+
     path = Path(file_path)
-    
-    # 如果是相对路径，现在我们假定大模型已生成完整路径，不再自动拼接
-    path = Path(file_path)
-    
+
+    # 如果路径不存在，尝试在 uploads/ 目录中查找（仅文件名部分）
     if not path.exists():
-        return {
-            "status": "error",
-            "error": f"文件不存在: {file_path}, 尝试的完整路径: {path.absolute()}"
-        }
+        found = False
+        # 尝试 PiDog 后端的 uploads/
+        uploads_candidates = [
+            Path("D:/developer/myProject/fianl_show/smart_agent_new/PiDog/backend/uploads") / path.name,
+            Path("PiDog/backend/uploads") / path.name,
+            Path("uploads") / path.name,
+        ]
+        for p in uploads_candidates:
+            if p.exists():
+                path = p
+                found = True
+                break
+        if not found:
+            return {
+                "status": "error",
+                "error": f"文件不存在: {file_path}, 尝试的完整路径: {path.absolute()}"
+            }
     
     try:
         with open(path, 'r', encoding=encoding) as f:

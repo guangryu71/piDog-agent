@@ -2,7 +2,9 @@
 模型管理服务 —— 提供商切换、模型选择
 """
 
-from config import PROVIDERS, AppState
+import json
+import os
+from config import PROVIDERS, AppState, PROJECT_ROOT
 from api_schemas.schemas import ModelStatus, ProviderInfo
 
 
@@ -25,8 +27,35 @@ def get_model_status() -> ModelStatus:
     )
 
 
+def _sync_config_to_file():
+    """将当前 AppState 中的模型配置同步写入 confing.json"""
+    config_path = os.path.join(PROJECT_ROOT, "confing.json")
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+
+    # 更新 qwen_config 中的关键字段
+    qc = data.setdefault("qwen_config", {})
+    provider = AppState.current_provider
+    info = PROVIDERS.get(provider, {})
+
+    qc["provider"] = provider
+    qc["model"] = AppState.current_model
+    qc["base_url"] = info.get("base_url", qc.get("base_url", ""))
+    # 保留可能手动填入的 api_key（不覆盖）
+    if AppState.custom_api_key:
+        qc["api_key"] = AppState.custom_api_key
+    elif info.get("api_key") and not qc.get("api_key"):
+        qc["api_key"] = info["api_key"]
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 def switch_model(provider: str, model: str = None, api_key: str = None) -> dict:
-    """切换模型提供商和/或模型"""
+    """切换模型提供商和/或模型，并同步写入 confing.json"""
     if provider not in PROVIDERS:
         return {"ok": False, "error": f"Unknown provider: {provider}. Options: {list(PROVIDERS.keys())}"}
 
@@ -43,6 +72,9 @@ def switch_model(provider: str, model: str = None, api_key: str = None) -> dict:
 
     if api_key:
         AppState.custom_api_key = api_key
+
+    # 同步写入 confing.json
+    _sync_config_to_file()
 
     return {
         "ok": True,

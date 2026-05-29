@@ -58,7 +58,6 @@ def load_config(config_path: str = "confing.json"):
     QWEN_CONFIG.update(config_data.get("qwen_config", {}))
     WORKING_DIRECTORY = config_data.get("working_directory", "")
     SKILLS_DIRECTORY = config_data.get("skills_directory", "skills")
-    SKILLS_LOCATOR_PATH = config_data.get("skills_locator_path", "skills_locator.json")
 
     if WORKING_DIRECTORY and not os.path.isabs(WORKING_DIRECTORY):
         WORKING_DIRECTORY = os.path.abspath(WORKING_DIRECTORY)

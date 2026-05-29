@@ -1,392 +1,349 @@
 """
 工具注册表 —— 集中管理所有可用工具的 JSON Schema 声明
-核心理念：每个工具有精确的 Schema 定义，大模型通过 Native Function Calling
-输出结构化 tool_call，系统按 Schema 校验后执行，不再依赖正则解析 JSON。
 
-设计参考：QwenPaw 的工具声明机制 —— JSON Schema 作为"API 契约"
+架构设计（v3.0）：
+  SKILL_REGISTRY: 按技能分组的工具注册表，每项 = {tools: {tool_name: {schema, module, function}}}
+  scan_skills():    扫描 skills/ 文件夹获取技能描述（取代 skills_locator.json）
+  两阶段选择:       扫描 skills/ 文件夹 → 选技能 → 从注册表取对应工具 Schema
+
+添加新技能只需两步：
+  1. 在 skills/ 下创建文件夹，放入 README.md（技能描述）
+  2. 在 SKILL_REGISTRY 中添加对应工具定义（schema + module + function）
 """
 
-from typing import Dict, List, Any, Callable, Optional
-import json
+from typing import Dict, List, Any, Optional
+import os
 
+# ================================================================
+# 第一部分：技能工具注册表（按 skill 文件夹名分组，模块化）
+# skill 名 = skills/ 下的文件夹名，保证前后端一致
+# ================================================================
 
-# ============================================================================
-# 工具 JSON Schema 定义
-# 每个工具包含：name, description, parameters (JSON Schema)
-# ============================================================================
+SKILL_REGISTRY: Dict[str, Dict] = {
 
-TOOL_SCHEMAS: List[Dict[str, Any]] = [
-    # ======================== 文件操作工具 ========================
-    {
-        "type": "function",
-        "function": {
-            "name": "write_file",
-            "description": "Write/create a file. Supports relative/absolute paths.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "文件路径，支持相对路径（相对于工作空间）或绝对路径"
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "要写入的文件内容"
-                    },
-                    "mode": {
-                        "type": "string",
-                        "enum": ["overwrite", "append"],
-                        "description": "写入模式：overwrite=覆盖, append=追加",
-                        "default": "overwrite"
-                    },
-                    "encoding": {
-                        "type": "string",
-                        "description": "文件编码，默认 utf-8",
-                        "default": "utf-8"
+    # ── 文件操作 ──
+    "files_controler": {
+        "tools": {
+            "write_file": {
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": "write_file",
+                        "description": "Write/create a file. Supports relative/absolute paths. Use mode='append' to add content without overwriting.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "file_path": {"type": "string", "description": "文件路径，支持相对路径（相对于工作空间）或绝对路径"},
+                                "content":    {"type": "string", "description": "要写入的文件内容"},
+                                "mode":       {"type": "string", "enum": ["overwrite", "append"], "description": "写入模式：overwrite=覆盖, append=追加", "default": "overwrite"},
+                                "encoding":   {"type": "string", "description": "文件编码，默认 utf-8", "default": "utf-8"},
+                            },
+                            "required": ["file_path", "content"]
+                        }
                     }
                 },
-                "required": ["file_path", "content"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_file",
-            "description": "Read entire file content.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "文件路径，支持相对路径或绝对路径"
-                    },
-                    "encoding": {
-                        "type": "string",
-                        "description": "文件编码，默认 utf-8",
-                        "default": "utf-8"
+                "module": "utils.files_controler.tools.file_writer",
+                "function": "write_file",
+            },
+            "read_file": {
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": "read_file",
+                        "description": "Read entire file content.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "file_path": {"type": "string", "description": "文件路径，支持相对路径或绝对路径"},
+                                "encoding":   {"type": "string", "description": "文件编码，默认 utf-8", "default": "utf-8"},
+                            },
+                            "required": ["file_path"]
+                        }
                     }
                 },
-                "required": ["file_path"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_file_lines",
-            "description": "Read specific line range (1-based).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "文件路径"
-                    },
-                    "start_line": {
-                        "type": "integer",
-                        "description": "起始行号（从1开始），None表示从头开始"
-                    },
-                    "end_line": {
-                        "type": "integer",
-                        "description": "结束行号，None表示到末尾"
-                    },
-                    "encoding": {
-                        "type": "string",
-                        "description": "文件编码，默认 utf-8",
-                        "default": "utf-8"
+                "module": "utils.files_controler.tools.file_reader",
+                "function": "read_file_full",
+            },
+            "read_file_lines": {
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": "read_file_lines",
+                        "description": "Read specific line range (1-based).",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "file_path":   {"type": "string", "description": "文件路径"},
+                                "start_line":  {"type": "integer", "description": "起始行号（1-based，含）"},
+                                "end_line":    {"type": "integer", "description": "结束行号（1-based，含），可选，默认读到文件末尾"},
+                                "encoding":    {"type": "string", "description": "文件编码，默认 utf-8", "default": "utf-8"},
+                            },
+                            "required": ["file_path", "start_line"]
+                        }
                     }
                 },
-                "required": ["file_path"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "replace_content",
-            "description": "Replace text in file (exact match).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "文件路径"
-                    },
-                    "old_content": {
-                        "type": "string",
-                        "description": "要替换的旧文本内容"
-                    },
-                    "new_content": {
-                        "type": "string",
-                        "description": "新文本内容"
-                    },
-                    "encoding": {
-                        "type": "string",
-                        "description": "文件编码，默认 utf-8",
-                        "default": "utf-8"
+                "module": "utils.files_controler.tools.file_reader",
+                "function": "read_file_lines",
+            },
+            "replace_content": {
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": "replace_content",
+                        "description": "Find-and-replace text in a file. All occurrences of old_text are replaced.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "file_path": {"type": "string", "description": "文件路径"},
+                                "old_text":   {"type": "string", "description": "要查找的原始文本（精确匹配）"},
+                                "new_text":   {"type": "string", "description": "替换后的新文本"},
+                                "encoding":   {"type": "string", "description": "文件编码，默认 utf-8", "default": "utf-8"},
+                            },
+                            "required": ["file_path", "old_text", "new_text"]
+                        }
                     }
                 },
-                "required": ["file_path", "old_content", "new_content"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_directory",
-            "description": "List directory contents with optional recursion.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "dir_path": {
-                        "type": "string",
-                        "description": "目录路径，默认当前工作空间",
-                        "default": "."
-                    },
-                    "max_depth": {
-                        "type": "integer",
-                        "description": "最大递归深度，默认3",
-                        "default": 3
+                "module": "utils.files_controler.tools.file_writer",
+                "function": "replace_content",
+            },
+            "list_directory": {
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": "list_directory",
+                        "description": "List directory contents. Returns file/directory names.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "path":        {"type": "string", "description": "目录路径，支持相对或绝对路径"},
+                                "recursive":   {"type": "boolean", "description": "是否递归列出子目录", "default": False},
+                                "show_hidden": {"type": "boolean", "description": "是否显示隐藏文件", "default": False},
+                            },
+                            "required": ["path"]
+                        }
                     }
                 },
-                "required": []
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_file_info",
-            "description": "Get file metadata (size, mtime) without reading content.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "文件路径"
+                "module": "utils.files_controler.tools.file_reader",
+                "function": "list_directory",
+            },
+            "get_file_info": {
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": "get_file_info",
+                        "description": "Get file metadata: size, modification time, type.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "file_path": {"type": "string", "description": "文件路径"},
+                            },
+                            "required": ["file_path"]
+                        }
                     }
                 },
-                "required": ["file_path"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_directory",
-            "description": "Create directory (auto-creates parents). For scaffolding.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "dir_path": {
-                        "type": "string",
-                        "description": "要创建的目录路径（绝对路径或相对工作目录的路径）"
+                "module": "utils.files_controler.tools.file_reader",
+                "function": "get_file_info",
+            },
+            "delete_file_lines": {
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": "delete_file_lines",
+                        "description": "Delete lines from a file. Use start_line/end_line or match_pattern.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "file_path":     {"type": "string", "description": "文件路径"},
+                                "start_line":    {"type": "integer", "description": "起始行号（1-based，含）"},
+                                "end_line":      {"type": "integer", "description": "结束行号（1-based，含），可选"},
+                                "match_pattern": {"type": "string", "description": "删除匹配的行（正则表达式），与行号二选一"},
+                                "encoding":      {"type": "string", "description": "文件编码，默认 utf-8", "default": "utf-8"},
+                            },
+                            "required": ["file_path"]
+                        }
                     }
                 },
-                "required": ["dir_path"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            # 复用 file_writer 中的 delete_lines，但对外暴露为独立工具
-            "name": "delete_file_lines",
-            "_original_name": "delete_lines",
-            "description": "Delete specific lines or clear entire file.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "文件路径"
-                    },
-                    "ifAll": {
-                        "type": "boolean",
-                        "description": "是否清空整个文件（删除所有行）",
-                        "default": False
-                    },
-                    "start_line": {
-                        "type": "integer",
-                        "description": "起始行号（从1开始），仅在 ifAll=False 时有效",
-                        "default": 1
-                    },
-                    "end_line": {
-                        "type": "integer",
-                        "description": "结束行号，None=到文件末尾",
-                    },
-                    "encoding": {
-                        "type": "string",
-                        "description": "文件编码",
-                        "default": "utf-8"
+                "module": "utils.files_controler.tools.file_writer",
+                "function": "delete_lines",
+                "_original_name": "delete_lines",
+            },
+            "create_directory": {
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": "create_directory",
+                        "description": "Create a new directory (and parents if needed).",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "path":     {"type": "string", "description": "目录路径"},
+                                "parents":  {"type": "boolean", "description": "是否创建父目录", "default": True},
+                            },
+                            "required": ["path"]
+                        }
                     }
                 },
-                "required": ["file_path"]
-            }
+                "module": "utils.files_controler.tools.file_writer",
+                "function": "create_directory",
+            },
         }
     },
 
-    # ======================== Shell/命令工具 ========================
-    {
-        "type": "function",
-        "function": {
-            "name": "execute_command",
-            "description": "Execute PowerShell command. For scripts, builds, pip install, git, etc.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "要执行的 PowerShell 命令"
-                    },
-                    "timeout": {
-                        "type": "integer",
-                        "description": "超时时间（秒），默认30",
-                        "default": 30
-                    },
-                    "working_directory": {
-                        "type": "string",
-                        "description": "工作目录，命令在此目录下执行"
+    # ── 命令行执行 ──
+    "shell_controler": {
+        "tools": {
+            "execute_command": {
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": "execute_command",
+                        "description": "Execute a shell/PowerShell command and return output. Use for: running scripts, installing packages (pip/npm), git, system info.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "command":  {"type": "string", "description": "要执行的命令"},
+                                "cwd":      {"type": "string", "description": "工作目录，可选"},
+                                "timeout":  {"type": "integer", "description": "超时秒数，默认 60", "default": 60},
+                            },
+                            "required": ["command"]
+                        }
                     }
                 },
-                "required": ["command"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "validate_python_syntax",
-            "description": "Syntax-check a single Python file (no execution).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "Python 文件路径"
+                "module": "utils.shell_controler.tools.command_executor",
+                "function": "execute_command",
+            },
+            "validate_python_syntax": {
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": "validate_python_syntax",
+                        "description": "Validate Python syntax without executing. Returns errors if any.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "code": {"type": "string", "description": "Python 代码字符串"},
+                            },
+                            "required": ["code"]
+                        }
                     }
                 },
-                "required": ["file_path"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "validate_multiple_python_files",
-            "description": "Syntax-check multiple Python files (no execution).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "file_paths": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Python 文件路径列表"
+                "module": "utils.shell_controler.tools.command_executor",
+                "function": "validate_python_syntax",
+            },
+            "validate_multiple_python_files": {
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": "validate_multiple_python_files",
+                        "description": "Validate syntax of multiple Python files at once.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "file_paths": {"type": "array", "items": {"type": "string"}, "description": "Python 文件路径列表"},
+                            },
+                            "required": ["file_paths"]
+                        }
                     }
                 },
-                "required": ["file_paths"]
-            }
-        }
-    },
-
-    # ======================== Skill 技能工具 ========================
-    {
-        "type": "function",
-        "function": {
-            "name": "process_image",
-            "description": "Image processing: generate(text→image), recognize, edit, OCR, convert, img2img, analyze. generate needs text_prompt; recognize/edit/ocr need image_path.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "operation": {
-                        "type": "string",
-                        "description": "操作类型: generate(文生图), recognize(图片识别), edit(编辑), ocr(文字提取), convert(格式转换), img2img(图生图), analyze(分析), list(列出所有操作)",
-                        "enum": ["generate", "recognize", "edit", "ocr", "convert", "img2img", "analyze", "list"]
-                    },
-                    "text_prompt": {
-                        "type": "string",
-                        "description": "图片描述文本，generate操作必填（英文效果更佳），如 'a cute puppy dog'"
-                    },
-                    "image_path": {
-                        "type": "string",
-                        "description": "图片文件路径，recognize/edit/ocr/img2img等操作需要"
-                    },
-                    "output_path": {
-                        "type": "string",
-                        "description": "输出文件路径（可选，默认保存到工作目录下，如 generated_image.png）"
-                    },
-                    "size": {
-                        "type": "string",
-                        "description": "生成图片尺寸，如 '1024*1024', '720*1280'",
-                        "default": "1024*1024"
-                    },
-                    "style": {
-                        "type": "string",
-                        "description": "生成风格: realistic(写实), artistic(艺术), anime(动漫), 3d_cartoon(3D卡通)",
-                        "default": "realistic"
-                    },
-                    "prompt": {
-                        "type": "string",
-                        "description": "用于recognize/img2img的提示词，如'描述图片中的物体'"
-                    }
-                },
-                "required": ["operation"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "browser_automation",
-            "description": "Browser automation via QwenPaw. Describe task naturally (e.g. 'search Python on Baidu'). Supports: search, scrape, fill forms, screenshot.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task": {
-                        "type": "string",
-                        "description": "要执行的浏览器操作的自然语言描述，如'打开今日头条获取热点新闻'、'在百度搜索Python教程并截图'"
-                    }
-                },
-                "required": ["task"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "blender_operation",
-            "description": "Execute Blender Python (bpy) via MCP for 3D modeling: create geometry, materials, lights, render. Requires Blender running with MCP plugin. Don't retry on connection failure.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "code": {
-                        "type": "string",
-                        "description": "Blender Python代码(bpy)，如 'import bpy; bpy.ops.mesh.primitive_cube_add()'"
-                    },
-                    "host": {
-                        "type": "string",
-                        "description": "MCP服务器地址，默认localhost",
-                        "default": "localhost"
-                    },
-                    "port": {
-                        "type": "integer",
-                        "description": "MCP服务器端口，默认9876",
-                        "default": 9876
-                    },
-                    "timeout": {
-                        "type": "integer",
-                        "description": "超时秒数，默认30",
-                        "default": 30
-                    }
-                },
-                "required": ["code"]
-            }
+                "module": "utils.shell_controler.tools.command_executor",
+                "function": "validate_multiple_python_files",
+            },
         }
     },
 
-    # ======================== 任务控制工具 ========================
-    {
+    # ── 图片处理 ──
+    "skill_img_handler": {
+        "tools": {
+            "process_image": {
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": "process_image",
+                        "description": "Process images: recognize(识别), generate(文生图), img2img(图生图), edit(编辑), ocr(文字提取), convert(格式转换), resize(调整尺寸), remove_bg(去背景), enhance(增强), analyze(质量分析). Specify operation and relevant params.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "operation": {
+                                    "type": "string",
+                                    "enum": ["recognize", "generate", "img2img", "edit", "ocr", "convert", "resize", "remove_bg", "enhance", "analyze"],
+                                    "description": "操作类型: recognize=识别图片, generate=文生图, img2img=图生图, edit=编辑图片, ocr=文字提取, convert=格式转换, resize=调整尺寸, remove_bg=去背景, enhance=增强, analyze=质量分析"
+                                },
+                                "image_path":     {"type": "string",   "description": "图片路径（用于recognize/edit/ocr/convert/resize/remove_bg/enhance/analyze/img2img）"},
+                                "text_prompt":     {"type": "string",   "description": "文生图/图生图的提示词，如'一只可爱的小猫'"},
+                                "size":            {"type": "string",   "description": "生成图片尺寸: 1024*1024(正方形), 720*1280(竖屏), 1280*720(横屏)", "default": "1024*1024"},
+                                "style":           {"type": "string",   "description": "生成风格: realistic(写实), artistic(艺术), anime(动漫), 3d_cartoon(3D卡通)", "default": "realistic"},
+                                "prompt":          {"type": "string",   "description": "用于recognize/img2img的提示词，如'描述图片中的物体'"},
+                            },
+                            "required": ["operation"]
+                        }
+                    }
+                },
+                "module": "utils.img_handler.image_handler",
+                "function": "process",
+            },
+        }
+    },
+
+    # ── 浏览器自动化 ──
+    "skill_web_controler": {
+        "tools": {
+            "browser_automation": {
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": "browser_automation",
+                        "description": "Browser automation via QwenPaw service. Describe task naturally (e.g. 'search Python on Baidu', 'open today's top news', 'screenshot this page'). Supports: search, scrape, fill forms, screenshot.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "task": {"type": "string", "description": "自然语言描述的浏览器任务，如'打开今日头条获取热点新闻'、'在百度搜索Python教程并截图'"},
+                            },
+                            "required": ["task"]
+                        }
+                    }
+                },
+                "module": "utils.web_controler.qwenpaw_client",
+                "function": "run",
+            },
+        }
+    },
+
+    # ── Blender 3D 建模 ──
+    "skill_blender_controler": {
+        "tools": {
+            "blender_operation": {
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": "blender_operation",
+                        "description": "Execute Blender Python (bpy) code via MCP for 3D modeling: create geometry, materials, lights, render. Requires Blender running with MCP plugin on localhost:9876. Don't retry on connection failure.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "code":    {"type": "string",  "description": "Blender Python 代码(bpy)，如 'import bpy; bpy.ops.mesh.primitive_cube_add()'"},
+                                "host":    {"type": "string",  "description": "MCP 服务器地址，默认 localhost", "default": "localhost"},
+                                "port":    {"type": "integer", "description": "MCP 服务器端口，默认 9876", "default": 9876},
+                                "timeout": {"type": "integer", "description": "超时秒数，默认 30", "default": 30},
+                            },
+                            "required": ["code"]
+                        }
+                    }
+                },
+                "module": "utils.blender_controler",
+                "function": "execute_blender_operation",
+            },
+        }
+    },
+}
+
+
+# ================================================================
+# finish_task — 任务结束/用户回复工具（必要，始终附带）
+# module/function 为 None，由 FunctionCallingExecutor 特殊处理
+# ================================================================
+
+_FINISH_TASK = {
+    "schema": {
         "type": "function",
         "function": {
             "name": "finish_task",
@@ -394,68 +351,139 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "summary": {
-                        "type": "string",
-                        "description": "技术总结：完成了什么操作、结果如何（内部记录，用户看不到）"
-                    },
-                    "reply": {
-                        "type": "string",
-                        "description": "面向用户的自然语言回复（直接展示给用户，必须友好、清晰、有帮助）"
-                    }
+                    "summary": {"type": "string", "description": "技术执行摘要（面向系统记录，描述完成了什么操作）"},
+                    "reply":   {"type": "string", "description": "面向用户的自然语言回复（直接展示给用户，必须友好、清晰、有帮助）"},
                 },
                 "required": ["summary", "reply"]
             }
         }
     },
-]
-
-
-# ============================================================================
-# 工具函数注册映射
-# tool_name → (module_import_path, function_name)
-# 用于在 Schema 校验通过后，精确定位并执行对应函数
-# ============================================================================
-
-TOOL_FUNCTION_MAP: Dict[str, Dict[str, str]] = {
-    # 文件操作 → file_writer.py / file_reader.py
-    "write_file":           {"module": "utils.files_controler.tools.file_writer",  "function": "write_file"},
-    "read_file":            {"module": "utils.files_controler.tools.file_reader",  "function": "read_file_full"},
-    "read_file_lines":      {"module": "utils.files_controler.tools.file_reader",  "function": "read_file_lines"},
-    "replace_content":      {"module": "utils.files_controler.tools.file_writer",  "function": "replace_content"},
-    "list_directory":       {"module": "utils.files_controler.tools.file_reader",  "function": "list_directory"},
-    "get_file_info":        {"module": "utils.files_controler.tools.file_reader",  "function": "get_file_info"},
-    "delete_file_lines":    {"module": "utils.files_controler.tools.file_writer",  "function": "delete_lines"},
-    "create_directory":     {"module": "utils.files_controler.tools.file_writer",  "function": "create_directory"},
-
-    # Shell 命令 → command_executor.py
-    "execute_command":               {"module": "utils.shell_controler.tools.command_executor", "function": "execute_command"},
-    "validate_python_syntax":        {"module": "utils.shell_controler.tools.command_executor", "function": "validate_python_syntax"},
-    "validate_multiple_python_files": {"module": "utils.shell_controler.tools.command_executor", "function": "validate_multiple_python_files"},
-
-    # Skill 技能工具（已迁移到 utils/ 统一管理）
-    "process_image":       {"module": "utils.img_handler.image_handler",   "function": "process"},
-    "browser_automation":  {"module": "utils.web_controler.qwenpaw_client", "function": "run"},
-    "blender_operation":   {"module": "utils.blender_controler",            "function": "execute_blender_operation"},
-
-    # 任务控制（内置）
-    "finish_task":         {"module": None, "function": None},  # 特殊处理：标记结束
+    "module": None,
+    "function": None,
 }
 
 
-# ============================================================================
-# 工具注册表 API
-# ============================================================================
+# ================================================================
+# 第二部分：自动构建数据结构（从 SKILL_REGISTRY + _FINISH_TASK）
+# ================================================================
+
+def _build_function_map() -> Dict[str, Dict[str, str]]:
+    """从 SKILL_REGISTRY + _FINISH_TASK 自动构建 TOOL_FUNCTION_MAP"""
+    result = {}
+    for skill_def in SKILL_REGISTRY.values():
+        for tool_name, tool_def in skill_def["tools"].items():
+            entry = {
+                "module": tool_def["module"],
+                "function": tool_def["function"],
+            }
+            if "_original_name" in tool_def:
+                entry["_original_name"] = tool_def["_original_name"]
+            result[tool_name] = entry
+    result["finish_task"] = {"module": _FINISH_TASK["module"], "function": _FINISH_TASK["function"]}
+    return result
+
+
+def _build_all_schemas() -> List[Dict]:
+    """从 SKILL_REGISTRY + _FINISH_TASK 自动构建 TOOL_SCHEMAS"""
+    result = []
+    for skill_def in SKILL_REGISTRY.values():
+        for tool_def in skill_def["tools"].values():
+            result.append(tool_def["schema"])
+    result.append(_FINISH_TASK["schema"])
+    return result
+
+
+def _build_skill_to_tools() -> Dict[str, List[str]]:
+    """从 SKILL_REGISTRY 自动构建 SKILL_TO_TOOLS"""
+    return {name: list(skill["tools"].keys()) for name, skill in SKILL_REGISTRY.items()}
+
+
+# 自动构建，保证注册表和映射表永远一致
+TOOL_FUNCTION_MAP: Dict[str, Dict[str, str]] = _build_function_map()
+TOOL_SCHEMAS: List[Dict]                       = _build_all_schemas()
+SKILL_TO_TOOLS: Dict[str, List[str]]           = _build_skill_to_tools()
+
+
+# ================================================================
+# 第四部分：技能扫描（取代 skills_locator.json）
+# 扫描 skills/ 文件夹，读取 README.md → 得到 {skill_name: description}
+# ================================================================
+
+# 项目根路径：本文件在 utils/，项目根在上一级
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SKILLS_DIR = os.path.join(_PROJECT_ROOT, "skills")
+
+# 默认禁用的技能列表文件
+_DISABLED_FILE = os.path.join(_PROJECT_ROOT, "PiDog", "backend", "disabled_skills.json")
+
+
+def scan_skills(skills_dir: str = None) -> Dict[str, str]:
+    """
+    扫描 skills/ 文件夹，读取每个子文件夹的 README.md 获取技能描述。
+
+    扫描规则：
+      - 遍历 skills/ 下所有子文件夹
+      - 如果子文件夹内存在 README.md，读取其内容作为技能描述
+      - 技能名 = 子文件夹名（如 skill_blender_controler、files_controler）
+      - 描述取 README.md 中 `# 标题` 之后的内容，跳过标题行本身
+      - 如果没有 README.md 或内容为空，跳过该文件夹
+
+    Returns:
+        {skill_name: description}  例: {"skill_blender_controler": "通过 bpy Python 代码..."}
+    """
+    if skills_dir is None:
+        skills_dir = SKILLS_DIR
+
+    if not os.path.isdir(skills_dir):
+        return {}
+
+    skills = {}
+    try:
+        for entry in os.listdir(skills_dir):
+            folder = os.path.join(skills_dir, entry)
+            if not os.path.isdir(folder):
+                continue
+            readme = os.path.join(folder, "README.md")
+            if not os.path.isfile(readme):
+                continue
+
+            with open(readme, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+
+            if not content:
+                continue
+
+            # 提取描述：去掉 # 标题行，取剩余内容
+            lines = content.split("\n")
+            desc_lines = []
+            skip_title = True
+            for line in lines:
+                stripped = line.strip()
+                if skip_title and stripped.startswith("#"):
+                    skip_title = False
+                    continue
+                if stripped:
+                    desc_lines.append(stripped)
+
+            description = " ".join(desc_lines).strip()
+            if description:
+                skills[entry] = description
+
+    except Exception:
+        pass
+
+    return skills
+
+
+# ================================================================
+# 第五部分：公共 API
+# ================================================================
 
 def get_tool_schemas() -> List[Dict[str, Any]]:
-    """
-    返回所有工具的 JSON Schema 列表，用于传给大模型的 tools 参数。
-    这就是"工具声明"——大模型看到这些 Schema，按 Schema 输出 tool_calls。
-    """
-    # 过滤掉内部字段（如 _original_name），只保留标准 function calling 字段
+    """返回所有工具的 JSON Schema 列表（用于传给大模型 tools 参数）。"""
     clean_schemas = []
     for tool in TOOL_SCHEMAS:
         func_def = tool["function"].copy()
-        # 移除内部标记字段
         func_def.pop("_original_name", None)
         clean_schemas.append({"type": "function", "function": func_def})
     return clean_schemas
@@ -483,9 +511,7 @@ def resolve_original_name(tool_name: str) -> str:
 
 
 def format_tools_for_prompt() -> str:
-    """
-    将工具列表格式化为人类可读的 markdown 文本（用于非 function calling 场景的降级方案）
-    """
+    """将工具列表格式化为人类可读的 markdown 文本（用于非 function calling 场景的降级方案）"""
     lines = ["## 可用工具列表\n"]
     for tool in TOOL_SCHEMAS:
         func = tool["function"]
@@ -507,8 +533,67 @@ def format_tools_for_prompt() -> str:
     return "\n".join(lines)
 
 
+def get_tools_for_skills(selected_skills: List[str]) -> List[Dict[str, Any]]:
+    """
+    根据选中的技能名返回对应工具的 Schema。
+    始终附带 finish_task（任务结束/回复用户的必要工具）。
+
+    Args:
+        selected_skills: 技能名列表，如 ["skill_blender_controler", "files_controler"]
+    Returns:
+        对应工具的 JSON Schema 列表
+    """
+    tool_names: set = {"finish_task"}
+
+    for skill in selected_skills:
+        if skill in SKILL_TO_TOOLS:
+            tool_names.update(SKILL_TO_TOOLS[skill])
+
+    return [t for t in TOOL_SCHEMAS if t["function"]["name"] in tool_names]
+
+
+def build_skill_selection_prompt(user_message: str, skills_dir: str = None) -> str:
+    """
+    构建技能选择 prompt：扫描 skills/ 文件夹获取可用技能，让 LLM 选择。
+    取代原来读取 skills_locator.json 的方式。
+
+    Args:
+        user_message: 用户输入
+        skills_dir:   skills 文件夹路径，默认 SKILLS_DIR
+
+    Returns:
+        完整的技能选择 prompt（含可用技能列表），若无技能则返回空字符串
+    """
+    skills = scan_skills(skills_dir)
+    if not skills:
+        return ""
+
+    skill_items = []
+    for name, desc in skills.items():
+        skill_items.append(f"- **{name}**: {desc}")
+
+    skills_text = "\n".join(skill_items)
+
+    return (
+        f"# 技能选择\n"
+        f"根据用户需求，从以下技能列表中选择**必须**的技能。\n"
+        f"只选真正需要的技能，按需选择，不要多选。\n\n"
+        f"## 可用技能\n{skills_text}\n\n"
+        f"## 用户需求\n{user_message}\n\n"
+        f"## 输出格式（仅输出 JSON，不要其他内容）\n"
+        f'{{"selected_skills": ["skill_name1", "skill_name2"]}}\n'
+    )
+
+
 if __name__ == "__main__":
-    # 测试：打印所有工具 Schema
-    print(json.dumps(get_tool_schemas(), indent=2, ensure_ascii=False))
-    print("\n---\n")
-    print(format_tools_for_prompt())
+    import json
+    print("=== 扫描技能 ===")
+    for name, desc in scan_skills().items():
+        print(f"  {name}: {desc[:80]}...")
+
+    print(f"\n=== 总计 {len(get_tool_schemas())} 个工具 ===")
+    for t in get_tool_schemas():
+        print(f"  {t['function']['name']}")
+
+    print(f"\n=== SKILL_TO_TOOLS ===")
+    print(json.dumps(SKILL_TO_TOOLS, indent=2, ensure_ascii=False))

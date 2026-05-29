@@ -37,15 +37,25 @@
     pages.chat(main);
 
     // ---- Modal 工具 ----
-    window.showModal = function (html) {
+    window.showModal = function (html, showButtons = true) {
         const overlay = document.getElementById('modal-overlay');
         const content = document.getElementById('modal-content');
-        content.innerHTML = html + `
-            <div class="modal-actions">
-                <button class="btn" onclick="closeModal()">Cancel</button>
-                <button class="btn btn-primary" id="modal-confirm">Confirm</button>
-            </div>`;
+        let buttonHtml = '';
+        if (showButtons) {
+            buttonHtml = `
+                <div class="modal-actions">
+                    <button class="btn" onclick="closeModal()">取消</button>
+                    <button class="btn btn-primary" id="modal-confirm">确认</button>
+                </div>`;
+        }
+        content.innerHTML = html + buttonHtml;
         overlay.classList.add('show');
+
+        // 默认确认按钮关闭弹窗
+        const confirmBtn = document.getElementById('modal-confirm');
+        if (confirmBtn) {
+            confirmBtn.onclick = closeModal;
+        }
     };
 
     window.closeModal = function () {

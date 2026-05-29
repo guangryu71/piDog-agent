@@ -21,21 +21,43 @@ const api = {
     },
 
     // ---- Chat ----
-    chat(message, sessionId = null) {
-        return this._fetch('POST', '/api/chat', { message, session_id: sessionId, stream: false });
+    chat(message, sessionId = null, fileId = null) {
+        return this._fetch('POST', '/api/chat', { message, session_id: sessionId, stream: false, file_id: fileId });
     },
 
-    chatStreamUrl(message, sessionId = null) {
+    chatStreamUrl(message, sessionId = null, fileId = null) {
         return fetch(API_BASE + '/api/chat/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message, session_id: sessionId, stream: true }),
+            body: JSON.stringify({ message, session_id: sessionId, stream: true, file_id: fileId }),
         });
+    },
+
+    cancelChat(sessionId) {
+        return this._fetch('POST', `/api/chat/cancel/${sessionId}`);
+    },
+
+    async uploadFile(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch(API_BASE + '/api/chat/upload', {
+            method: 'POST',
+            body: formData,
+        });
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`HTTP ${res.status}: ${text}`);
+        }
+        return res.json();
     },
 
     getSessions() { return this._fetch('GET', '/api/chat/sessions'); },
     deleteSession(id) { return this._fetch('DELETE', `/api/chat/sessions/${id}`); },
     compactSession(id) { return this._fetch('POST', `/api/chat/sessions/${id}/compact`); },
+    approve(taskId, approved) {
+        return this._fetch('POST', '/api/chat/approve', { task_id: taskId, approved });
+    },
+    cleanAllMemory() { return this._fetch('POST', '/api/chat/clean'); },
 
     // ---- Model ----
     getModelStatus() { return this._fetch('GET', '/api/model'); },

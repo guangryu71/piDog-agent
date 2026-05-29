@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from routers import chat, model, tool, skill, token
 from config import WORKING_DIRECTORY
 
-FRONTEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "front_end"))
+FRONTEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend"))
 
 app = FastAPI(
     title="PiDog Backend",
@@ -37,7 +37,7 @@ app.add_middleware(
 if WORKING_DIRECTORY and os.path.isdir(WORKING_DIRECTORY):
     app.mount("/files", StaticFiles(directory=WORKING_DIRECTORY), name="files")
 
-# API 路由
+# API 路由（必须在 StaticFiles 挂载之前注册）
 app.include_router(chat.router)
 app.include_router(model.router)
 app.include_router(tool.router)
@@ -45,7 +45,8 @@ app.include_router(skill.router)
 app.include_router(token.router)
 
 
-# 前端页面
+# ---- 页面路由（必须在 StaticFiles 挂载之前注册） ----
+
 @app.get("/ui")
 @app.get("/ui/")
 def serve_ui():
@@ -63,6 +64,11 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# ---- 前端静态文件（放在最后，仅兜底匹配 — 所有显式路由优先） ----
+# html=True 让 / 或未知路径自动返回 index.html
+app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
 
 
 if __name__ == "__main__":

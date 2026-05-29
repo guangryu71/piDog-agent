@@ -1,21 +1,19 @@
 {
   "qwen_config": {
-    "provider": "qwen",
-    "api_key": "",
+    "provider": "bailian",
+    "api_key": "sk-6449eaeedbcc4b9e818fc60d643c114f",
     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "model": "qwen-max",
     "temperature": 0.7,
     "max_tokens": 3000
   },
-  "skills_locator_path": "skills_locator.json",
   "skills_directory": "skills",
   "history_path": "history/history.md",
-  "working_directory": "D:/developer/myProject/buffer/smart_agent_new/workplace", 
+  "working_directory": "D:/developer/myProject/buffer/smart_agent_new/workplace",
   "agent_settings": {
     "name": "SmartAgent",
     "version": "1.0.0",
     "description": "一个智能代理系统，支持多种技能和记忆功能"
   },
   "python_location": "D:/software/Anconda/python.exe"
-
 }

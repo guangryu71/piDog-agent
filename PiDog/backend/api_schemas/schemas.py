@@ -12,6 +12,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="用户消息")
     session_id: Optional[str] = Field(None, description="会话ID，不传则新建")
     stream: bool = Field(False, description="是否流式返回")
+    file_id: Optional[str] = Field(None, description="上传文件的ID（通过 /api/chat/upload 获得）")
 
 
 class ChatResponse(BaseModel):
