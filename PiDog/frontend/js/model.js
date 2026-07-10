@@ -125,33 +125,42 @@ async function renderModelPage(container) {
             </div>
 
             <!-- ============ 逻辑模型 ============ -->
-            <h3 style="margin:24px 0 12px;color:var(--text);font-size:15px;font-weight:600;">
+            <h3 style="margin:24px 0 4px;color:var(--text);font-size:15px;font-weight:600;">
                 🧩 逻辑模型 <span style="color:var(--text-dim);font-weight:400;font-size:13px;">（文本对话与工具调用）</span>
             </h3>
+            <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">
+                当前：<span style="color:var(--green);">${logicStatus.current_provider}</span>
+                /
+                <span class="mono" style="color:var(--green);">${logicStatus.current_model}</span>
+            </div>
             <div class="provider-grid" id="logic-model-grid">
                 ${logicCards}
             </div>
 
             <!-- ============ 图片生成模型 ============ -->
-            <h3 style="margin:32px 0 12px;color:var(--text);font-size:15px;font-weight:600;">
+            <h3 style="margin:32px 0 4px;color:var(--text);font-size:15px;font-weight:600;">
                 🎨 图片生成模型 <span style="color:var(--text-dim);font-weight:400;font-size:13px;">（文生图、图生图）</span>
             </h3>
+            <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">
+                当前：<span style="color:var(--green);">${imgGenStatus.current_provider}</span>
+                /
+                <span class="mono" style="color:var(--green);">${imgGenStatus.current_model}</span>
+            </div>
             <div class="provider-grid" id="img-gen-model-grid">
                 ${imgGenCards}
             </div>
-            <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">
-                当前：<span style="color:var(--green);">${imgGenStatus.current_model}</span>
-            </div>
 
             <!-- ============ 图片理解模型 ============ -->
-            <h3 style="margin:32px 0 12px;color:var(--text);font-size:15px;font-weight:600;">
+            <h3 style="margin:32px 0 4px;color:var(--text);font-size:15px;font-weight:600;">
                 👁️ 图片理解模型 <span style="color:var(--text-dim);font-weight:400;font-size:13px;">（多模态识别、OCR、图片分析）</span>
             </h3>
+            <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">
+                当前：<span style="color:var(--green);">${imgUndStatus.current_provider}</span>
+                /
+                <span class="mono" style="color:var(--green);">${imgUndStatus.current_model}</span>
+            </div>
             <div class="provider-grid" id="img-und-model-grid">
                 ${imgUndCards}
-            </div>
-            <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">
-                当前：<span style="color:var(--green);">${imgUndStatus.current_model}</span>
             </div>
         `;
 

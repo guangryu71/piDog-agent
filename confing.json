@@ -23,11 +23,14 @@
   "img_gen_config": {
     "provider": "dashscope_img_gen",
     "api_key": "",
-    "model": "wanx2.1-t2i-turbo"
+    "model": "wanx2.1-t2i-plus"
   },
   "img_und_config": {
     "provider": "dashscope_img_und",
     "api_key": "",
     "model": "qwen-vl-max"
+  },
+  "modelscope_config": {
+    "token": "ms-353efc28-8a37-44cb-9e85-02041901c8a7"
   }
 }

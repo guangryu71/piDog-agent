@@ -506,25 +506,48 @@ def scan_skills(skills_dir: str = None) -> Dict[str, str]:
 # ================================================================
 
 def get_tool_schemas() -> List[Dict[str, Any]]:
-    """返回所有工具的 JSON Schema 列表（用于传给大模型 tools 参数）。"""
+    """返回所有工具的 JSON Schema 列表（用于传给大模型 tools 参数）。
+    包含静态注册工具 + 已连接的 MCP 动态工具。"""
     clean_schemas = []
     for tool in TOOL_SCHEMAS:
         func_def = tool["function"].copy()
         func_def.pop("_original_name", None)
         clean_schemas.append({"type": "function", "function": func_def})
+
+    # 添加已连接的 MCP 动态工具
+    try:
+        from MCPS import get_connected_mcp_tool_schemas
+        mcp_schemas = get_connected_mcp_tool_schemas()
+        clean_schemas.extend(mcp_schemas)
+    except ImportError:
+        pass
+
     return clean_schemas
 
 
 def get_tool_by_name(name: str) -> Optional[Dict[str, Any]]:
-    """按名称查找工具 Schema"""
+    """按名称查找工具 Schema（含 MCP 工具）"""
+    # 先查静态注册表
     for tool in TOOL_SCHEMAS:
         if tool["function"]["name"] == name:
             return tool
+    # 再查 MCP 工具（名称以 mcp__ 开头）
+    if name.startswith("mcp__"):
+        try:
+            from MCPS import get_connected_mcp_tool_schemas
+            for tool in get_connected_mcp_tool_schemas():
+                if tool["function"]["name"] == name:
+                    return tool
+        except ImportError:
+            pass
     return None
 
 
 def get_function_info(tool_name: str) -> Optional[Dict[str, str]]:
-    """获取工具对应的模块路径和函数名"""
+    """获取工具对应的模块路径和函数名（含 MCP 工具）"""
+    if tool_name.startswith("mcp__"):
+        # MCP 工具不需要 module/function 路径，由 MCPS 路由
+        return {"module": "MCPS", "function": "call_mcp_tool"}
     return TOOL_FUNCTION_MAP.get(tool_name)
 
 

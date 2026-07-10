@@ -186,8 +186,17 @@ def _sync_config_to_file():
     elif info.get("api_key") and not qc.get("api_key"):
         qc["api_key"] = info["api_key"]
 
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        import logging
+        logging.getLogger("model").info(
+            "配置已保存: provider=%s model=%s -> %s",
+            AppState.current_provider, AppState.current_model, config_path,
+        )
+    except Exception as e:
+        import logging
+        logging.getLogger("model").error("保存配置失败 %s: %s", config_path, e)
 
 
 def _sync_image_config_to_file(section: str, provider: str, model: str, api_key: str = None):

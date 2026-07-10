@@ -27,8 +27,12 @@ function renderChatPage(container) {
                 <input type="file" id="chat-file-input" style="display:none;" multiple>
                 <span id="chat-file-indicator" class="chat-file-indicator" style="display:none;"></span>
                 <input class="input" id="chat-input" placeholder="Type your message... (Enter to send)" autofocus>
+                <!-- 已选择的 skill/mcp 标签条 -->
+                <div id="chat-tags-bar" class="chat-tags-bar" style="display:none;"></div>
                 <button class="btn btn-primary" id="chat-send">Send</button>
                 <button class="btn btn-danger chat-stop-btn" id="chat-stop" style="display:none;">⏹ Stop</button>
+                <!-- 选择面板：输入 /skill 或 /mcp 时弹出 -->
+                <div id="chat-selector-panel" class="chat-selector-panel" style="display:none;"></div>
             </div>
         </div>
     `;
@@ -37,11 +41,14 @@ function renderChatPage(container) {
     let isBusy = false;
     let pendingFileId = null;  // 待发送的文件 ID
     let pendingFileName = null;
+    let selectorData = null;  // {type: "skill"|"mcp", items: [...]}
+    let selectorCache = {};   // skill/MCP 列表缓存
+    let selectedSkills = [];
+    let selectedMcps = [];
     let readerRef = null;      // SSE reader 引用，用于取消
     const msgContainer = document.getElementById('chat-messages');
     const input = document.getElementById('chat-input');
     const sessionIdEl = document.getElementById('chat-session-id');
-
     function addMsg(role, content, extraClass = '') {
         const div = document.createElement('div');
         div.className = `chat-msg ${role} ${extraClass} fade-in`;
@@ -102,6 +109,121 @@ function renderChatPage(container) {
         setBusy(false);
         input.focus();
     }
+
+
+    // ==================== Skill/MCP 选择器 ====================
+
+    async function ensureSelectorCache(type) {
+        if (selectorCache[type]) return selectorCache[type];
+        try {
+            if (type === 'skill') {
+                const items = await api.getSkills();
+                selectorCache['skill'] = items;
+                return items;
+            } else {
+                const items = await api.getMcpList();
+                selectorCache['mcp'] = items;
+                return items;
+            }
+        } catch (e) { return []; }
+    }
+
+    function showSelector(type) {
+        const panel = document.getElementById('chat-selector-panel');
+        const inp = document.getElementById('chat-input');
+        if (!panel) return;
+        inp.value = '';
+        inp.placeholder = type === 'skill' ? '搜索技能...' : '搜索 MCP...';
+        ensureSelectorCache(type).then(function(items) {
+            if (!items || items.length === 0) {
+                panel.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-dim);">暂无可用 ' + type + '</div>';
+                panel.style.display = '';
+                return;
+            }
+            selectorData = { type: type, items: items, filtered: items };
+            renderSelectorPanel();
+        });
+    }
+
+    function renderSelectorPanel() {
+        const panel = document.getElementById('chat-selector-panel');
+        if (!panel || !selectorData) return;
+        const items = selectorData.filtered || selectorData.items;
+        const type = selectorData.type;
+        const selectedArr = type === 'skill' ? selectedSkills : selectedMcps;
+        const selectedSet = {};
+        selectedArr.forEach(function(s) { selectedSet[s] = true; });
+
+        let html = '<div class="selector-header">' + (type === 'skill' ? '选择技能（可多选）' : '选择 MCP（可多选）') + '</div>';
+        html += '<div class="selector-list">';
+        items.forEach(function(item) {
+            const key = item.key || item.name || item.id || '';
+            const name = item.name || key;
+            const sel = selectedSet[key] ? ' selector-selected' : '';
+            const check = selectedSet[key] ? '\u2713 ' : '';
+            html += '<div class=\"selector-item' + sel + '\" data-type="' + type + '" data-key="' + key + '">' + check + name + ' <span class="selector-key">' + key + '</span></div>';
+        });
+        html += '</div>';
+        html += '<div class="selector-footer"><button class="btn btn-sm" id="selector-close">\u2715 关闭</button></div>';
+        panel.innerHTML = html;
+        panel.style.display = '';
+
+        panel.querySelectorAll('.selector-item').forEach(function(el) {
+            el.addEventListener('click', function() {
+                toggleSelectorItem(this.dataset.type, this.dataset.key);
+                renderSelectorPanel();
+                updateTagsBar();
+            });
+        });
+        const closeBtn = document.getElementById('selector-close');
+        if (closeBtn) closeBtn.addEventListener('click', hideSelector);
+    }
+
+    function toggleSelectorItem(type, key) {
+        const arr = type === 'skill' ? selectedSkills : selectedMcps;
+        const idx = arr.indexOf(key);
+        if (idx >= 0) { arr.splice(idx, 1); } else { arr.push(key); }
+        updateTagsBar();
+    }
+
+    function hideSelector() {
+        const panel = document.getElementById('chat-selector-panel');
+        const inp = document.getElementById('chat-input');
+        if (panel) panel.style.display = 'none';
+        if (inp) inp.placeholder = 'Type your message... (Enter to send)';
+        selectorData = null;
+    }
+
+    function updateTagsBar() {
+        const bar = document.getElementById('chat-tags-bar');
+        if (!bar) return;
+        const tags = [];
+        selectedSkills.forEach(function(s) { tags.push({type: 'skill', key: s}); });
+        selectedMcps.forEach(function(s) { tags.push({type: 'mcp', key: s}); });
+        if (tags.length === 0) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+        let html = '';
+        tags.forEach(function(t) {
+            const icon = t.type === 'skill' ? '\U0001f527' : '\U0001f50c';
+            html += '<span class="chat-tag" data-type="' + t.type + '" data-key="' + t.key + '">' + icon + ' ' + t.key + ' <span class="tag-remove">\u2715</span></span>';
+        });
+        bar.innerHTML = html;
+        bar.style.display = '';
+        bar.querySelectorAll('.tag-remove').forEach(function(el) {
+            el.addEventListener('click', function() {
+                const tag = this.closest('.chat-tag');
+                if (!tag) return;
+                const arr = tag.dataset.type === 'skill' ? selectedSkills : selectedMcps;
+                const idx = arr.indexOf(tag.dataset.key);
+                if (idx >= 0) arr.splice(idx, 1);
+                updateTagsBar();
+            });
+        });
+    }
+
+    function hasActiveSelections() {
+        return selectedSkills.length > 0 || selectedMcps.length > 0;
+    }
+
 
     async function sendMessage() {
         const text = input.value.trim();
@@ -181,6 +303,56 @@ function renderChatPage(container) {
             } catch (e) {
                 addMsg('system', `❌ 压缩失败: ${escapeHtml(e.message)}`, 'error');
             }
+            setBusy(false);
+            input.focus();
+            return;
+        }
+
+        // ---- 命令：/skill 打开技能选择器 ----
+        if (text === '/skill') {
+            input.value = '';
+            showSelector('skill');
+            setBusy(false);
+            input.focus();
+            return;
+        }
+
+        // ---- 命令：/mcp 打开 MCP 选择器 ----
+        if (text === '/mcp') {
+            input.value = '';
+            showSelector('mcp');
+            setBusy(false);
+            input.focus();
+            return;
+        }
+        if (text === '/skill') {
+            input.value = '';
+            addMsg('user', text);
+            try {
+                const skills = await api.getSkills();
+                let s = '';
+                skills.forEach(function(k) { s += '  ' + k.key + ' - ' + (k.description || '').slice(0, 50) + String.fromCharCode(10); });
+                addMsg('system', '可用技能:\n' + s + '\n\n输入 /skill <名称> 指定');
+            } catch (e) {
+                addMsg('system', '查询失败: ' + escapeHtml(e.message), 'error');
+            }
+            setBusy(false);
+            input.focus();
+            return;
+        }
+
+        // /mcp 带参数时也打开选择器（兼容习惯）
+        if (text.startsWith('/mcp ') || text === '/mcp') {
+            input.value = '';
+            showSelector('mcp');
+            setBusy(false);
+            input.focus();
+            return;
+        }
+        // /skill 带参数时打开选择器
+        if (text.startsWith('/skill ')) {
+            input.value = '';
+            showSelector('skill');
             setBusy(false);
             input.focus();
             return;
@@ -563,6 +735,14 @@ function renderChatPage(container) {
         <div class="cmd-hint-item" data-cmd="/compact">
             <span class="cmd-hint-name">/compact</span>
             <span class="cmd-hint-desc">压缩当前会话（摘要旧消息）</span>
+        </div>
+        <div class="cmd-hint-item" data-cmd="/skill">
+            <span class="cmd-hint-name">/skill</span>
+            <span class="cmd-hint-desc">指定使用的技能，如 /skill files_controler</span>
+        </div>
+        <div class="cmd-hint-item" data-cmd="/mcp">
+            <span class="cmd-hint-name">/mcp</span>
+            <span class="cmd-hint-desc">查看/指定 MCP，如 /mcp browser</span>
         </div>`;
     input.parentNode.insertBefore(cmdHint, input);
 

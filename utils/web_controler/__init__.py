@@ -2,6 +2,8 @@
 浏览器自动化工具 —— 基于原生 Playwright（不再依赖 QwenPaw 服务）
 
 v4.0: 替换 qwenpaw_client.py，直接使用 Playwright 控制本地浏览器
+
+MCP 服务器版本：MCPS/browser/mcp_server.py（端口 9100，JSON-RPC 2.0）
 """
 
 from .browser_engine import browser_use

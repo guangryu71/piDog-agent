@@ -116,6 +116,9 @@ class AppState:
     img_und_model: str = "qwen-vl-max"
     img_und_api_key: str = ""
 
+    # 魔搭 MCP Token
+    modelscope_token: str = ""
+
     # ---- 逻辑模型方法 ----
     @classmethod
     def get_api_key(cls) -> str:
@@ -172,8 +175,12 @@ def load_config_from_file():
 
         # 逻辑模型（原 qwen_config）
         qwen = data.get("qwen_config", {})
-        PROVIDERS["bailian"]["api_key"] = qwen.get("api_key", "")
+        provider_name = qwen.get("provider", "bailian")
+        AppState.current_provider = provider_name
         AppState.current_model = qwen.get("model", "qwen-max")
+        # 将 confing.json 中的 api_key 同步到对应 PROVIDER
+        if provider_name in PROVIDERS and qwen.get("api_key"):
+            PROVIDERS[provider_name]["api_key"] = qwen["api_key"]
 
         # 图片生成模型配置
         img_gen = data.get("img_gen_config", {})
@@ -192,6 +199,11 @@ def load_config_from_file():
             AppState.img_und_model = img_und["model"]
         if img_und.get("api_key"):
             AppState.img_und_api_key = img_und["api_key"]
+
+        # 魔搭 MCP 配置
+        ms = data.get("modelscope_config", {})
+        if ms.get("token"):
+            AppState.modelscope_token = ms["token"]
 
         # 加载工作目录
         wd = data.get("working_directory", "")

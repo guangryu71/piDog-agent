@@ -13,6 +13,7 @@
         tools: renderToolsPage,
         skills: renderSkillsPage,
         tokens: renderTokensPage,
+        mcp: renderMcpPage,
     };
 
     // 当前页面

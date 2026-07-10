@@ -131,3 +131,26 @@ class TokenStats(BaseModel):
 class ApprovalRequest(BaseModel):
     task_id: str = Field(..., description="审批任务ID")
     approved: bool = Field(..., description="true=批准, false=拒绝")
+
+
+# ==================== MCP ====================
+
+class MCPInfo(BaseModel):
+    key: str
+    name: str
+    description: str
+    enabled: bool
+    running: bool
+    port: int
+    auto_start: bool
+    type: str = "local"
+    connected_count: Optional[int] = Field(None, description="hub 类型已连接数")
+    total_tools: Optional[int] = Field(None, description="hub 类型总工具数")
+    ms_name: Optional[str] = Field(None, description="魔搭连接标识")
+    tool_count: Optional[int] = Field(None, description="魔搭连接工具数")
+
+
+class MCPSwitchRequest(BaseModel):
+    key: str = Field(..., description="MCP 标识符")
+    action: str = Field(..., description="操作: start/stop/enable/disable/auto_start")
+    value: Optional[bool] = Field(None, description="enable/auto_start 时的布尔值")

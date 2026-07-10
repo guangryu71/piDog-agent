@@ -1,6 +1,8 @@
 """
 Blender 3D 建模工具 - 从 skills/skill_blender_controler/tools 迁移到 utils 统一管理
 通过 TCP Socket 与 Blender MCP 服务通信
+
+MCP 服务器版本：MCPS/blender/mcp_server.py（端口 9101，JSON-RPC 2.0）
 """
 
 from typing import Dict, Any

@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from routers import chat, model, tool, skill, token
+from routers import chat, model, tool, skill, token, mcp
 from config import WORKING_DIRECTORY
 
 FRONTEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend"))
@@ -43,6 +43,7 @@ app.include_router(model.router)
 app.include_router(tool.router)
 app.include_router(skill.router)
 app.include_router(token.router)
+app.include_router(mcp.router)
 
 
 # ---- 页面路由（必须在 StaticFiles 挂载之前注册） ----

@@ -149,6 +149,20 @@ class FunctionCallingExecutor:
                 "_finish": True,
             }
 
+        # ---- MCP 动态工具路由 ----
+        if func_name.startswith("mcp__"):
+            try:
+                from MCPS import call_mcp_tool
+                result = call_mcp_tool(func_name, arguments)
+                content = json.dumps(result, ensure_ascii=False)
+                return {
+                    "tool_call_id": tool_call_id,
+                    "role": "tool",
+                    "content": content,
+                }
+            except Exception as e:
+                return self._error_result(tool_call_id, f"MCP 调用失败: {e}")
+
         # 获取模块和函数
         module_path = func_map["module"]
         function_name = func_map["function"]

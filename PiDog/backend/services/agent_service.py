@@ -370,6 +370,46 @@ def _save_session_to_file(session_id: str, messages: List[Dict]):
         json.dump(messages, f, ensure_ascii=False, indent=2)
 
 
+def _build_mcp_context() -> str:
+    """构建 MCP 服务上下文 —— 让 LLM 知道何时使用 MCP 工具而非本地工具"""
+    try:
+        from MCPS import get_mcp_list, get_connected_mcp_tool_schemas
+        mcps = get_mcp_list()
+        conns = [m for m in mcps if m.get("type") == "modelscope_remote"]
+        if not conns:
+            return ""
+        lines = [
+            "## MCP 工具使用规则",
+            "当用户明确提到某个 MCP 服务名称时（如 deepwiki、fetch 等），你必须使用对应的 MCP 工具，",
+            "而不是 browser_use 或 process_image 等通用工具。",
+            "MCP 工具名称格式: mcp__服务名__工具名",
+            "重要：调用 MCP 工具后，如果它返回了结果，你就调用 finish_task 展示结果给用户，",
+            "不要再额外调用 browser_use 去访问同一个 URL。MCP 工具已经完成了数据获取。",
+            "",
+            "当前已连接的 MCP 服务:",
+        ]
+        for c in conns:
+            name = c.get("name") or c.get("key") or "?"
+            key = c.get("ms_name") or "?"
+            tool_count = c.get("tool_count", 0) or c.get("total_tools", 0) or 0
+            status = "在线" if c.get("running") else "离线（调用时自动重连）"
+            lines.append(f"  - {name} (key={key}, {tool_count} 工具, {status})")
+
+        # 获取具体工具名
+        schemas = get_connected_mcp_tool_schemas()
+        if schemas:
+            lines.append("")
+            lines.append("可用 MCP 工具列表:")
+            for s in schemas:
+                fname = s["function"]["name"]
+                fdesc = s["function"]["description"][:80]
+                lines.append(f"  - {fname}: {fdesc}")
+
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
 def _build_system_prompt() -> str:
     """构建精简 system prompt —— 推理约束模式"""
     wd = WORKING_DIRECTORY or os.path.join(PROJECT_ROOT, "workplace")
@@ -394,6 +434,8 @@ def _build_system_prompt() -> str:
         f"NEVER say 'due to technical limitations' or 'I cannot display/extract/show the content'. "
         f"The data is already retrieved — just format it nicely and show it to the user. "
         f"This is your core job: fetch data AND present it.\n"
+        f"## Available MCP Services\n"
+        f"{_build_mcp_context()}\n"
     )
 
 
