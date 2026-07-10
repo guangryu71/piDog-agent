@@ -18,8 +18,8 @@ PROVIDERS: Dict[str, dict] = {
     "deepseek": {
         "name": "DeepSeek",
         "base_url": "https://api.deepseek.com/v1",
-        "models": ["deepseek-chat", "deepseek-reasoner"],
-        "default_model": "deepseek-chat",
+        "models": ["deepseek-v4-flash", "deepseek-v4-pro"],
+        "default_model": "deepseek-v4-flash",
         "api_key": "",  # 用户填写
     },
     "siliconflow": {

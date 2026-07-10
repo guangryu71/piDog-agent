@@ -159,9 +159,10 @@ def _format_tool_print(func_name: str, args: Dict[str, Any]) -> str:
         op = args.get("operation", "?")
         prompt = args.get("text_prompt", args.get("image_path", ""))
         return f"[IMAGE] {op}: {str(prompt)[:50]}"
-    elif func_name == "browser_automation":
-        task = args.get("task", "?")
-        return f"[BROWSER] {task[:60]}"
+    elif func_name == "browser_use":
+        act = args.get("action", "?")
+        desc = args.get("url", args.get("ref", args.get("text", "")))
+        return f"[BROWSER] {act}: {str(desc)[:50]}"
     elif func_name == "blender_operation":
         code = args.get("code", "?")
         return f"[BLENDER] {code[:60]}"
@@ -391,7 +392,7 @@ def run_agent_v2(user_input: str = None, max_iterations: int = 15):
                 messages.append(assistant_msg)
 
                 # 预估耗时工具列表（需要给用户进度提示）
-                _slow_tools = {"browser_automation", "process_image", "blender_operation"}
+                _slow_tools = {"browser_use", "process_image", "blender_operation"}
 
                 # 打印即将执行的操作
                 for tc in tool_calls:

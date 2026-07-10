@@ -47,6 +47,11 @@ class FunctionCallingExecutor:
                 set_workspace_path(self.workspace_path)
             except Exception:
                 pass
+            try:
+                from utils.web_controler.browser_engine import set_workspace_dir
+                set_workspace_dir(self.workspace_path)
+            except Exception:
+                pass
 
     @staticmethod
     def extract_tool_calls(response) -> Tuple[List[Dict], Optional[str]]:

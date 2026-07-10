@@ -76,6 +76,48 @@ class LLMChat:
         except Exception as e:
             raise Exception(f"Function Calling API 调用失败: {str(e)}")
 
+    def chat_with_tools_stream(
+            self,
+            messages: List[Dict],
+            tools: List[Dict],
+            temperature: float = None,
+            max_tokens: int = None,
+            system_prompt: str = None,
+            tool_choice: str = "auto",
+            **kwargs
+    ):
+        """
+        🚀 流式 Function Calling —— 边生成边返回 chunk，前端实现渐进式渲染
+
+        与 chat_with_tools 参数相同，区别在于：
+        - stream=True，返回迭代器而非完整 response
+        - 每个 chunk 含 delta.tool_calls（工具名/参数逐 token 出现）
+        - 最后一个 chunk 含 usage token 统计（需 stream_options={"include_usage": True}）
+
+        Returns:
+            OpenAI chat completion stream 迭代器
+        """
+        processed_messages = []
+        if system_prompt:
+            processed_messages.append({"role": "system", "content": system_prompt})
+        processed_messages.extend(messages)
+
+        try:
+            stream = self.client.chat.completions.create(
+                model=self.model,
+                messages=processed_messages,
+                tools=tools,
+                tool_choice=tool_choice,
+                temperature=temperature if temperature is not None else self.temperature,
+                max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
+                stream=True,
+                stream_options={"include_usage": True},
+                **kwargs
+            )
+            return stream
+        except Exception as e:
+            raise Exception(f"Function Calling 流式 API 调用失败: {str(e)}")
+
     def chat_no_memory(self, 
                       messages: List[Dict], 
                       temperature: float = None, 

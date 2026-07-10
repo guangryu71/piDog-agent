@@ -52,6 +52,7 @@ const api = {
     },
 
     getSessions() { return this._fetch('GET', '/api/chat/sessions'); },
+    getSessionMessages(id) { return this._fetch('GET', `/api/chat/sessions/${id}`); },
     deleteSession(id) { return this._fetch('DELETE', `/api/chat/sessions/${id}`); },
     compactSession(id) { return this._fetch('POST', `/api/chat/sessions/${id}/compact`); },
     approve(taskId, approved) {

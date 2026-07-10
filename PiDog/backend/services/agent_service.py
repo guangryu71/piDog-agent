@@ -9,6 +9,7 @@ import json
 import uuid
 import time
 import asyncio
+import threading
 from typing import Dict, List, Optional, AsyncGenerator
 from collections import defaultdict
 
@@ -401,7 +402,10 @@ def _is_failure(result_content: str) -> bool:
     cl = result_content.lower()
     if '"status": "success"' in cl or '"status":"success"' in cl:
         return False
+    if '"ok": true' in cl or '"ok":true' in cl or '"ok": true,' in cl:
+        return False
     markers = ['"status": "error"', '"status": "failed"', '"status": "timeout"',
+               '"ok": false', '"ok":false',
                'connection refused', 'could not connect', '未找到工具', '导入模块失败']
     return any(m in cl for m in markers)
 
@@ -551,11 +555,11 @@ def chat_sync(session_id: str, user_message: str, file_id: str = None, max_itera
                     except Exception:
                         _final_reply = ""
 
-                    # 如果前序工具（browser_automation 等）返回了丰富内容，附加到 finish_task 回复中
+                    # 如果前序工具（browser_use 等）返回了丰富内容，附加到 finish_task 回复中
                     prev_detailed = ""
                     for prev_idx in range(len(aligned_results)):
                         prev_func = tool_calls[prev_idx]["function"]["name"] if prev_idx < len(tool_calls) else ""
-                        if prev_func in ("browser_automation",) and prev_idx != i:
+                        if prev_func in ("browser_use",) and prev_idx != i:
                             prev_content = aligned_results[prev_idx].get("content", "")
                             if len(prev_content) > 200 and prev_content not in _final_reply:
                                 prev_detailed = prev_content.strip()
@@ -638,27 +642,99 @@ async def chat_stream(session_id: str, user_message: str, file_id: str = None, m
             })
             failure_counts.pop(t, None)
 
-        # LLM 调用是阻塞的，放线程池
-        try:
-            response = await asyncio.to_thread(
-                llm.chat_with_tools,
-                messages=messages, tools=tools,
-                system_prompt=system_prompt,  # tool_choice 默认 "auto"（DashScope 兼容 API 不支持 "required"）
-            )
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': f'LLM API error: {str(e)}', 'iteration': iteration})}\n\n"
-            # 不保存损坏的会话；下次请求会从文件加载最后一次健康状态
+        # 🚀 LLM 流式调用（渐进渲染工具卡片，不再等整块返回）
+        event_queue: asyncio.Queue = asyncio.Queue()
+        accumulated_tc: Dict[int, dict] = {}   # tool_index → {id, name, args}
+        stream_error: Optional[str] = None
+        stream_usage = None
+
+        def _run_llm_stream():
+            nonlocal stream_error, stream_usage
+            try:
+                llm_stream = llm.chat_with_tools_stream(
+                    messages=messages, tools=tools,
+                    system_prompt=system_prompt,
+                )
+                for chunk in llm_stream:
+                    if hasattr(chunk, "usage") and chunk.usage:
+                        stream_usage = chunk.usage
+                    if chunk.choices and chunk.choices[0].delta:
+                        delta = chunk.choices[0].delta
+                        # ---- tool_calls 渐进推送 ----
+                        if delta.tool_calls:
+                            for tc_delta in delta.tool_calls:
+                                idx = tc_delta.index
+                                if idx not in accumulated_tc:
+                                    accumulated_tc[idx] = {"id": "", "name": "", "args": ""}
+                                    asyncio.run_coroutine_threadsafe(
+                                        event_queue.put({"type": "tool_stream_start", "tool_index": idx, "iteration": iteration}),
+                                        loop
+                                    )
+                                if tc_delta.id:
+                                    accumulated_tc[idx]["id"] = tc_delta.id
+                                if tc_delta.function:
+                                    if tc_delta.function.name:
+                                        accumulated_tc[idx]["name"] = tc_delta.function.name
+                                        asyncio.run_coroutine_threadsafe(
+                                            event_queue.put({"type": "tool_stream_name", "tool_index": idx, "name": tc_delta.function.name, "iteration": iteration}),
+                                            loop
+                                        )
+                                    if tc_delta.function.arguments:
+                                        accumulated_tc[idx]["args"] += tc_delta.function.arguments
+                                        asyncio.run_coroutine_threadsafe(
+                                            event_queue.put({"type": "tool_stream_args", "tool_index": idx, "delta": tc_delta.function.arguments, "iteration": iteration}),
+                                            loop
+                                        )
+                        # ---- 纯文本流式推送 ----
+                        if delta.content:
+                            asyncio.run_coroutine_threadsafe(
+                                event_queue.put({"type": "text_stream", "delta": delta.content, "iteration": iteration}),
+                                loop
+                            )
+            except Exception as e:
+                stream_error = str(e)
+            finally:
+                asyncio.run_coroutine_threadsafe(event_queue.put(None), loop)
+
+        loop = asyncio.get_event_loop()
+        thread = threading.Thread(target=_run_llm_stream, daemon=True)
+        thread.start()
+
+        collected_text = ""
+        while True:
+            event = await event_queue.get()
+            if event is None:
+                break
+            etype = event["type"]
+            if etype == "text_stream":
+                collected_text += event["delta"]
+                yield f"data: {json.dumps({'type': 'text_stream', 'delta': event['delta'], 'iteration': iteration})}\n\n"
+            else:
+                yield f"data: {json.dumps(event)}\n\n"
+
+        if stream_error:
+            yield f"data: {json.dumps({'type': 'error', 'message': f'LLM API error: {stream_error}', 'iteration': iteration})}\n\n"
             break
 
-        if hasattr(response, "usage") and response.usage:
+        if stream_usage:
             record_usage(
                 provider=AppState.current_provider,
                 model=AppState.get_effective_model(),
-                prompt_tokens=response.usage.prompt_tokens,
-                completion_tokens=response.usage.completion_tokens,
+                prompt_tokens=stream_usage.prompt_tokens,
+                completion_tokens=stream_usage.completion_tokens,
             )
 
-        tool_calls, text_content = FunctionCallingExecutor.extract_tool_calls(response)
+        # 从累积的流式数据构建 tool_calls
+        tool_calls = []
+        for idx in sorted(accumulated_tc.keys()):
+            tc = accumulated_tc[idx]
+            if tc["name"]:
+                tool_calls.append({
+                    "id": tc["id"] or f"call_{iteration}_{idx}",
+                    "type": "function",
+                    "function": {"name": tc["name"], "arguments": tc["args"] or "{}"},
+                })
+        text_content = collected_text.strip() or None
 
         if tool_calls:
             assistant_msg = {"role": "assistant", "content": None, "tool_calls": tool_calls}
@@ -733,7 +809,7 @@ async def chat_stream(session_id: str, user_message: str, file_id: str = None, m
                 if len(content) > TOOL_RESULT_MAX_CHARS:
                     content = content[:TOOL_RESULT_MAX_CHARS] + "\n...(truncated)"
 
-                # 保存工具结果（browser_automation 等），供 finish_task 事件携带
+                # 保存工具结果（browser_use 等），供 finish_task 事件携带
                 _tool_results_map[func_name] = content
 
                 # ---- 按顺序 yield：先 tool_call 事件（带 flush），再结果 ----
@@ -753,9 +829,9 @@ async def chat_stream(session_id: str, user_message: str, file_id: str = None, m
                     except Exception:
                         _final_reply = ""
 
-                    # 把前序工具（browser_automation 等）的原始结果附加到 finish 事件
+                    # 把前序工具（browser_use 等）的原始结果附加到 finish 事件
                     _prev_tool_data = ""
-                    for _tn in ("browser_automation", "web_search", "get_page_content"):
+                    for _tn in ("browser_use", "web_search", "get_page_content"):
                         if _tn in _tool_results_map:
                             _pd = _tool_results_map[_tn]
                             if len(_pd) > 100:
@@ -764,6 +840,10 @@ async def chat_stream(session_id: str, user_message: str, file_id: str = None, m
                     yield f"data: {json.dumps({'type': 'finish', 'summary': content[:500], 'reply': _final_reply, 'tool_data': _prev_tool_data})}\n\n"
 
                 messages.append({"role": "tool", "tool_call_id": r.get("tool_call_id", call_id), "content": content})
+
+            # ---- 若 finish_task 已触发，将最终回复写入 messages 供持久化 ----
+            if task_finished and _final_reply:
+                messages.append({"role": "assistant", "content": _final_reply})
 
             # ---- 在所有 tool 结果之后注入提示（不破坏 assistant→tool 配对） ----
             for hint in _hints_to_inject:
@@ -820,6 +900,22 @@ def delete_session(session_id: str) -> bool:
         os.remove(path)
         return True
     return False
+
+
+def get_session_messages(session_id: str) -> dict:
+    """
+    获取会话的完整消息历史（用于前端加载历史记录）
+    返回 {session_id, messages: [...]}
+    """
+    path = os.path.join(SESSION_DIR, f"{session_id}.json")
+    if not os.path.exists(path):
+        return {"session_id": session_id, "messages": []}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            messages = json.load(f)
+        return {"session_id": session_id, "messages": messages}
+    except Exception:
+        return {"session_id": session_id, "messages": []}
 
 
 def _auto_compact_if_needed(sid: str, messages: List[Dict]) -> List[Dict]:

@@ -284,26 +284,52 @@ SKILL_REGISTRY: Dict[str, Dict] = {
         }
     },
 
-    # ── 浏览器自动化 ──
+    # ── 浏览器自动化（v4.0: 原生 Playwright，不再依赖 QwenPaw 服务）──
     "skill_web_controler": {
         "tools": {
-            "browser_automation": {
+            "browser_use": {
                 "schema": {
                     "type": "function",
                     "function": {
-                        "name": "browser_automation",
-                        "description": "Browser automation via QwenPaw service. Describe task naturally (e.g. 'search Python on Baidu', 'open today's top news', 'screenshot this page'). Supports: search, scrape, fill forms, screenshot.",
+                        "name": "browser_use",
+                        "description": "Control browser (Playwright). Default is headless. Use headed=True with action=start to show window. Flow: start→open(url)→snapshot (get refs)→click/type with ref→screenshot. Supports: start, stop, open, navigate, navigate_back, snapshot, click, type, screenshot, eval, close, tabs, press_key, wait_for, pdf, console_messages, network_requests.",
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "task": {"type": "string", "description": "自然语言描述的浏览器任务，如'打开今日头条获取热点新闻'、'在百度搜索Python教程并截图'"},
+                                "action": {"type": "string", "enum": ["start","stop","open","navigate","navigate_back","snapshot","click","type","screenshot","eval","evaluate","close","tabs","press_key","wait_for","pdf","console_messages","network_requests"], "description": "操作类型"},
+                                "url": {"type": "string", "description": "目标 URL（open/navigate 时必需）"},
+                                "page_id": {"type": "string", "description": "页面标识符，默认 'default'", "default": "default"},
+                                "selector": {"type": "string", "description": "CSS 选择器（click/type 时可选，与 ref 二选一）"},
+                                "text": {"type": "string", "description": "输入文本（type 时必需）"},
+                                "code": {"type": "string", "description": "JS 代码（eval 时必需）"},
+                                "path": {"type": "string", "description": "输出文件路径（screenshot/pdf）"},
+                                "wait": {"type": "integer", "description": "click 后等待毫秒数"},
+                                "full_page": {"type": "boolean", "description": "是否全页截图"},
+                                "filename": {"type": "string", "description": "快照/截图文件名"},
+                                "ref": {"type": "string", "description": "元素引用（来自 snapshot，与 selector 二选一）"},
+                                "key": {"type": "string", "description": "按键名（press_key 时必需，如 'Enter', 'Escape'）"},
+                                "submit": {"type": "boolean", "description": "type 后是否按 Enter"},
+                                "slowly": {"type": "boolean", "description": "是否逐字符输入"},
+                                "double_click": {"type": "boolean", "description": "是否双击"},
+                                "button": {"type": "string", "enum": ["left","right","middle"], "description": "鼠标按钮"},
+                                "screenshot_type": {"type": "string", "enum": ["png","jpeg"], "description": "截图格式"},
+                                "snapshot_filename": {"type": "string", "description": "快照保存路径"},
+                                "tab_action": {"type": "string", "enum": ["list","new","close","select"], "description": "标签操作"},
+                                "index": {"type": "integer", "description": "标签索引（tabs select/close 时）"},
+                                "wait_time": {"type": "number", "description": "等待秒数（wait_for）"},
+                                "text_gone": {"type": "string", "description": "等待此文本消失（wait_for）"},
+                                "headed": {"type": "boolean", "description": "是否显示浏览器窗口（start 时有效）"},
+                                "browser_args": {"type": "string", "description": "额外浏览器启动参数"},
+                                "executable_path": {"type": "string", "description": "自定义浏览器路径"},
+                                "level": {"type": "string", "enum": ["info","warning","error"], "description": "控制台日志级别"},
+                                "include_static": {"type": "boolean", "description": "是否包含静态资源请求（network_requests）"},
                             },
-                            "required": ["task"]
+                            "required": ["action"]
                         }
                     }
                 },
-                "module": "utils.web_controler.qwenpaw_client",
-                "function": "run",
+                "module": "utils.web_controler.browser_engine",
+                "function": "browser_use",
             },
         }
     },

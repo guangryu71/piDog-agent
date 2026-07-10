@@ -18,23 +18,44 @@
     // 当前页面
     let currentPage = 'chat';
 
+    // 缓存各页面容器 DOM，切换时只切换显示/隐藏，不销毁重建
+    const pageContainers = {};
+
     // ---- 导航切换 ----
     navItems.forEach(item => {
         item.addEventListener('click', () => {
             const page = item.dataset.page;
             if (page === currentPage) return;
 
+            // 隐藏当前页面
+            if (pageContainers[currentPage]) {
+                pageContainers[currentPage].style.display = 'none';
+            }
+
             navItems.forEach(n => n.classList.remove('active'));
             item.classList.add('active');
             currentPage = page;
 
-            main.innerHTML = '';
-            if (pages[page]) pages[page](main);
+            if (pageContainers[page]) {
+                // 已渲染过 → 直接显示
+                pageContainers[page].style.display = '';
+            } else {
+                // 首次进入 → 创建容器并渲染
+                const div = document.createElement('div');
+                div.style.cssText = 'width:100%;height:100%;';
+                main.appendChild(div);
+                pageContainers[page] = div;
+                if (pages[page]) pages[page](div);
+            }
         });
     });
 
-    // ---- 首次加载 ----
-    pages.chat(main);
+    // ---- 首次加载（chat）----
+    const chatDiv = document.createElement('div');
+    chatDiv.style.cssText = 'width:100%;height:100%;';
+    main.appendChild(chatDiv);
+    pageContainers['chat'] = chatDiv;
+    pages.chat(chatDiv);
 
     // ---- Modal 工具 ----
     window.showModal = function (html, showButtons = true) {

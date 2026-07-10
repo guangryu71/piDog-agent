@@ -83,6 +83,12 @@ def list_sessions():
     return agent_service.list_sessions()
 
 
+@router.get("/sessions/{session_id}")
+def get_session(session_id: str):
+    """获取会话详情（包含完整消息）"""
+    return agent_service.get_session_messages(session_id)
+
+
 @router.delete("/sessions/{session_id}")
 def delete_session(session_id: str):
     """删除会话"""
