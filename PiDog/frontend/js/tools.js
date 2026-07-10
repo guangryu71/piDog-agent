@@ -15,16 +15,16 @@ async function renderToolsPage(container) {
     `).join('');
 
     container.innerHTML = `
-        <h2 style="margin-bottom:16px;">🔧 Registered Tools <span style="color:var(--text-dim);font-size:13px;">(${tools.length})</span></h2>
+        <h2 style="margin-bottom:16px;">🔧 已注册工具 <span style="color:var(--text-dim);font-size:13px;">（共 ${tools.length} 个）</span></h2>
         <div class="card">
             <div class="table-wrap">
                 <table>
                     <thead>
                         <tr>
-                            <th>Name</th>
-                            <th>Description</th>
-                            <th>Module</th>
-                            <th>Function</th>
+                            <th>工具名称</th>
+                            <th>功能描述</th>
+                            <th>模块路径</th>
+                            <th>执行函数</th>
                         </tr>
                     </thead>
                     <tbody>${rows}</tbody>

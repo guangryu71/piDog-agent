@@ -60,10 +60,22 @@ const api = {
     },
     cleanAllMemory() { return this._fetch('POST', '/api/chat/clean'); },
 
-    // ---- Model ----
+    // ---- Logic Model ----
     getModelStatus() { return this._fetch('GET', '/api/model'); },
     switchModel(provider, model = null, apiKey = null) {
         return this._fetch('POST', '/api/model/switch', { provider, model, api_key: apiKey });
+    },
+
+    // ---- Image Generation Model ----
+    getImgGenStatus() { return this._fetch('GET', '/api/model/img-gen'); },
+    switchImgGen(provider, model = null, apiKey = null) {
+        return this._fetch('POST', '/api/model/img-gen/switch', { category: 'img_gen', provider, model, api_key: apiKey });
+    },
+
+    // ---- Image Understanding Model ----
+    getImgUndStatus() { return this._fetch('GET', '/api/model/img-und'); },
+    switchImgUnd(provider, model = null, apiKey = null) {
+        return this._fetch('POST', '/api/model/img-und/switch', { category: 'img_und', provider, model, api_key: apiKey });
     },
 
     // ---- Tools ----

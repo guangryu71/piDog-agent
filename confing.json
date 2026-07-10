@@ -1,7 +1,7 @@
 {
   "qwen_config": {
     "provider": "deepseek",
-    "api_key": "sk-6449eaeedbcc4b9e818fc60d643c114f",
+    "api_key": "sk-07a5e328fedd4f0dafe51230e8bd302c",
     "base_url": "https://api.deepseek.com/v1",
     "model": "deepseek-v4-flash",
     "temperature": 0.7,
@@ -19,5 +19,15 @@
   "browser": {
     "engine": "edge",
     "executable_path": "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
+  },
+  "img_gen_config": {
+    "provider": "dashscope_img_gen",
+    "api_key": "",
+    "model": "wanx2.1-t2i-turbo"
+  },
+  "img_und_config": {
+    "provider": "dashscope_img_und",
+    "api_key": "",
+    "model": "qwen-vl-max"
   }
 }

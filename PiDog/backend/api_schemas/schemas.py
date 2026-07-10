@@ -44,6 +44,39 @@ class ModelStatus(BaseModel):
     providers: List[ProviderInfo]
 
 
+# ==================== 图片模型 ====================
+
+class ImageGenProviderInfo(BaseModel):
+    key: str
+    name: str
+    base_url: str
+    models: List[str]
+    default_model: str
+    has_key: bool
+
+
+class ImageUndProviderInfo(BaseModel):
+    key: str
+    name: str
+    base_url: str
+    models: List[str]
+    default_model: str
+    has_key: bool
+
+
+class ImageModelStatus(BaseModel):
+    current_provider: str
+    current_model: str
+    providers: List[ImageGenProviderInfo]
+
+
+class ImageModelSwitchRequest(BaseModel):
+    category: str = Field(..., description="图片模型类别: img_gen=生成, img_und=理解")
+    provider: str = Field(..., description="提供商 key")
+    model: Optional[str] = Field(None, description="模型名称")
+    api_key: Optional[str] = Field(None, description="自定义 API Key")
+
+
 # ==================== 工具 ====================
 
 class ToolInfo(BaseModel):

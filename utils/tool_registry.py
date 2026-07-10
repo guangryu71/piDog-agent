@@ -29,7 +29,7 @@ SKILL_REGISTRY: Dict[str, Dict] = {
                     "type": "function",
                     "function": {
                         "name": "write_file",
-                        "description": "Write/create a file. Supports relative/absolute paths. Use mode='append' to add content without overwriting.",
+                        "description": "写入/创建文件。支持相对路径或绝对路径，使用 mode='append' 追加内容不覆盖。",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -50,7 +50,7 @@ SKILL_REGISTRY: Dict[str, Dict] = {
                     "type": "function",
                     "function": {
                         "name": "read_file",
-                        "description": "Read entire file content.",
+                        "description": "读取整个文件内容。",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -69,7 +69,7 @@ SKILL_REGISTRY: Dict[str, Dict] = {
                     "type": "function",
                     "function": {
                         "name": "read_file_lines",
-                        "description": "Read specific line range (1-based).",
+                        "description": "读取文件指定行范围（1-based）。",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -90,7 +90,7 @@ SKILL_REGISTRY: Dict[str, Dict] = {
                     "type": "function",
                     "function": {
                         "name": "replace_content",
-                        "description": "Find-and-replace text in a file. All occurrences of old_text are replaced.",
+                        "description": "在文件中查找并替换文本，所有匹配的 old_text 都会被替换。",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -111,7 +111,7 @@ SKILL_REGISTRY: Dict[str, Dict] = {
                     "type": "function",
                     "function": {
                         "name": "list_directory",
-                        "description": "List directory contents. Returns file/directory names.",
+                        "description": "列出目录内容，返回文件/目录名称列表。",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -131,7 +131,7 @@ SKILL_REGISTRY: Dict[str, Dict] = {
                     "type": "function",
                     "function": {
                         "name": "get_file_info",
-                        "description": "Get file metadata: size, modification time, type.",
+                        "description": "获取文件元数据：大小、修改时间、类型。",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -149,7 +149,7 @@ SKILL_REGISTRY: Dict[str, Dict] = {
                     "type": "function",
                     "function": {
                         "name": "delete_file_lines",
-                        "description": "Delete lines from a file. Use start_line/end_line or match_pattern.",
+                        "description": "删除文件中的行。使用 start_line/end_line 指定范围或 match_pattern 正则匹配。",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -172,7 +172,7 @@ SKILL_REGISTRY: Dict[str, Dict] = {
                     "type": "function",
                     "function": {
                         "name": "create_directory",
-                        "description": "Create a new directory (and parents if needed).",
+                        "description": "创建新目录（自动创建父目录）。",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -197,7 +197,7 @@ SKILL_REGISTRY: Dict[str, Dict] = {
                     "type": "function",
                     "function": {
                         "name": "execute_command",
-                        "description": "Execute a shell/PowerShell command and return output. Use for: running scripts, installing packages (pip/npm), git, system info.",
+                        "description": "执行 shell/PowerShell 命令并返回输出。用于运行脚本、安装依赖（pip/npm）、git 操作、系统信息查询等。",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -217,7 +217,7 @@ SKILL_REGISTRY: Dict[str, Dict] = {
                     "type": "function",
                     "function": {
                         "name": "validate_python_syntax",
-                        "description": "Validate Python syntax without executing. Returns errors if any.",
+                        "description": "验证 Python 语法（不执行），返回错误信息（如有）。",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -235,7 +235,7 @@ SKILL_REGISTRY: Dict[str, Dict] = {
                     "type": "function",
                     "function": {
                         "name": "validate_multiple_python_files",
-                        "description": "Validate syntax of multiple Python files at once.",
+                        "description": "同时验证多个 Python 文件的语法。",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -259,7 +259,7 @@ SKILL_REGISTRY: Dict[str, Dict] = {
                     "type": "function",
                     "function": {
                         "name": "process_image",
-                        "description": "Process images: recognize(识别), generate(文生图), img2img(图生图), edit(编辑), ocr(文字提取), convert(格式转换), resize(调整尺寸), remove_bg(去背景), enhance(增强), analyze(质量分析). Specify operation and relevant params.",
+                        "description": "处理图片：recognize(识别), generate(文生图), img2img(图生图), edit(编辑), ocr(文字提取), convert(格式转换), resize(调整尺寸), remove_bg(去背景), enhance(增强), analyze(质量分析)。指定 operation 和相应参数执行对应操作。",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -292,7 +292,7 @@ SKILL_REGISTRY: Dict[str, Dict] = {
                     "type": "function",
                     "function": {
                         "name": "browser_use",
-                        "description": "Control browser (Playwright). Default is headless. Use headed=True with action=start to show window. Flow: start→open(url)→snapshot (get refs)→click/type with ref→screenshot. Supports: start, stop, open, navigate, navigate_back, snapshot, click, type, screenshot, eval, close, tabs, press_key, wait_for, pdf, console_messages, network_requests.",
+                        "description": "控制浏览器（Playwright）。默认无头模式，action=start 加 headed=True 显示窗口。流程：start→open(url)→snapshot(获取元素引用)→click/type(用ref操作元素)→screenshot。支持：start, stop, open, navigate, snapshot, click, type, screenshot, eval, close, tabs, press_key, wait_for, pdf 等操作。",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -342,7 +342,7 @@ SKILL_REGISTRY: Dict[str, Dict] = {
                     "type": "function",
                     "function": {
                         "name": "blender_operation",
-                        "description": "Execute Blender Python (bpy) code via MCP for 3D modeling: create geometry, materials, lights, render. Requires Blender running with MCP plugin on localhost:9876. Don't retry on connection failure.",
+                        "description": "通过 MCP 执行 Blender Python(bpy) 代码进行 3D 建模：创建几何体、材质、灯光、渲染。需要 Blender 运行且 MCP 插件已开启（localhost:9876）。连接失败请勿重试。",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -373,7 +373,7 @@ _FINISH_TASK = {
         "type": "function",
         "function": {
             "name": "finish_task",
-            "description": "Call when task is done OR to reply to user. 'summary' = technical log for system. 'reply' = natural language response shown to user. Always provide both fields. Even for simple greetings like 'hello', call finish_task with a friendly reply.",
+            "description": "任务完成时或需要回复用户时调用。'summary' = 面向系统的技术执行摘要，'reply' = 面向用户的友好自然语言回复。两个字段都必须提供。即使是简单问候如'你好'，也要通过 finish_task 回复。",
             "parameters": {
                 "type": "object",
                 "properties": {
