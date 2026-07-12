@@ -153,7 +153,15 @@ def add_mcp(key: str, name: str = None, description: str = "") -> dict:
 
 
 def modelscope_search(search: str = "", category: str = "", page: int = 1) -> dict:
-    """搜索魔搭 MCP 广场的托管服务"""
+    """搜索魔搭 MCP 广场的托管服务（含后端限流，防止重复请求压垮魔搭 API）"""
+    import time
+    if not hasattr(modelscope_search, '_last_call'):
+        modelscope_search._last_call = 0
+    now = time.time()
+    if now - modelscope_search._last_call < 2.0:
+        return {"success": False, "message": "rate limited", "servers": [], "total": 0}
+    modelscope_search._last_call = now
+
     from MCPS.modelscope.api_client import search_mcp
     return search_mcp(
         search=search,

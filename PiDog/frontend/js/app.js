@@ -14,6 +14,7 @@
         skills: renderSkillsPage,
         tokens: renderTokensPage,
         mcp: renderMcpPage,
+        workflow: renderWorkflowPage,
     };
 
     // 当前页面

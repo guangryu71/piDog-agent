@@ -20,17 +20,21 @@ function renderChatPage(container) {
                 </div>
             </div>
 
-            <div class="chat-input-wrap">
+            <div class="chat-input-wrap" style="flex-wrap:wrap;">
+                <div style="display:flex;gap:8px;align-items:center;width:100%;">
                 <label class="btn btn-sm chat-upload-btn" id="chat-upload-btn" title="Upload file">
                     📎
                 </label>
                 <input type="file" id="chat-file-input" style="display:none;" multiple>
                 <span id="chat-file-indicator" class="chat-file-indicator" style="display:none;"></span>
                 <input class="input" id="chat-input" placeholder="Type your message... (Enter to send)" autofocus>
-                <!-- 已选择的 skill/mcp 标签条 -->
-                <div id="chat-tags-bar" class="chat-tags-bar" style="display:none;"></div>
+
                 <button class="btn btn-primary" id="chat-send">Send</button>
                 <button class="btn btn-danger chat-stop-btn" id="chat-stop" style="display:none;">⏹ Stop</button>
+                </div>
+
+<div id="chat-tags-bar" class="chat-tags-bar" style="display:none;"></div>
+
                 <!-- 选择面板：输入 /skill 或 /mcp 时弹出 -->
                 <div id="chat-selector-panel" class="chat-selector-panel" style="display:none;"></div>
             </div>
@@ -143,6 +147,30 @@ function renderChatPage(container) {
             selectorData = { type: type, items: items, filtered: items };
             renderSelectorPanel();
         });
+        // 点击选择器外部区域关闭
+        setTimeout(function() {
+            document.addEventListener('click', _onSelectorClickOutside);
+        }, 0);
+    }
+
+    function _onSelectorClickOutside(e) {
+        var panel = document.getElementById('chat-selector-panel');
+        var input = document.getElementById('chat-input');
+        if (!panel || panel.style.display === 'none') {
+            document.removeEventListener('click', _onSelectorClickOutside);
+            return;
+        }
+        // 点击的是选择器内部的 .selector-item → 不关闭
+        if (e.target.closest && e.target.closest('.selector-item')) {
+            return;
+        }
+        // 点击的是选择器面板本身或输入框 → 不关闭
+        if (e.target === panel || e.target === input || (panel && panel.contains(e.target))) {
+            return;
+        }
+        // 其他区域 → 关闭
+        hideSelector();
+        document.removeEventListener('click', _onSelectorClickOutside);
     }
 
     function renderSelectorPanel() {
@@ -164,7 +192,6 @@ function renderChatPage(container) {
             html += '<div class=\"selector-item' + sel + '\" data-type="' + type + '" data-key="' + key + '">' + check + name + ' <span class="selector-key">' + key + '</span></div>';
         });
         html += '</div>';
-        html += '<div class="selector-footer"><button class="btn btn-sm" id="selector-close">\u2715 关闭</button></div>';
         panel.innerHTML = html;
         panel.style.display = '';
 
@@ -175,8 +202,6 @@ function renderChatPage(container) {
                 updateTagsBar();
             });
         });
-        const closeBtn = document.getElementById('selector-close');
-        if (closeBtn) closeBtn.addEventListener('click', hideSelector);
     }
 
     function toggleSelectorItem(type, key) {

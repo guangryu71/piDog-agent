@@ -10,8 +10,12 @@ async function renderMcpPage(container) {
     async function loadMsStatus() {
         try { return await api.modelscopeGetStatus(); } catch (e) { return null; }
     }
+    let _lastSearchTime = 0;
     async function searchMs(search, category, page) {
         const validPage = Math.max(1, parseInt(page) || 1);
+        const now = Date.now();
+        if (now - _lastSearchTime < 2000) return null;
+        _lastSearchTime = now;
         try { return await api.modelscopeSearch(search, category, validPage); } catch (e) { return null; }
     }
     async function loadCategories() {
@@ -77,8 +81,9 @@ async function renderMcpPage(container) {
 
     // ==================== 渲染 ====================
 
+    var _rc = 0;
     function render() {
-        console.log("[MCP] raw[0]=", JSON.stringify(mcps[0])); console.log("[MCP] types=", mcps.map(m=>m.type), "mcps=", mcps.length, "local=", mcps.filter(m => m.type === "local").length, "remote=", mcps.filter(m => m.type === "modelscope_remote").length);
+        if (++_rc > 30) { console.warn("[MCP] render limit"); return; }
         const localMcps = mcps.filter(m => m.type === 'local');
         const hubMcp = mcps.find(m => m.type === 'hub');
         const msRemotes = mcps.filter(m => m.type === 'modelscope_remote');
