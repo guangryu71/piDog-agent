@@ -110,11 +110,18 @@ def cancel_session(session_id: str) -> bool:
 
 
 # ---- 文件上传支持 ----
-UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads")
+from config import WORKING_DIRECTORY
+UPLOAD_DIR = WORKING_DIRECTORY if WORKING_DIRECTORY else os.path.join(os.path.dirname(__file__), "..", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # 支持多模态的模型前缀
-MULTIMODAL_MODELS = {"qwen-vl", "qvq", "gpt-4o", "gpt-4-vision", "claude-3", "gemini"}
+def _model_has_vision(model_name: str) -> bool:
+    """检测模型是否具备图片理解能力"""
+    return any(kw in model_name.lower() for kw in [
+        "vl", "vision", "minicpmv", "cogvlm", "llava", "gpt-4o",
+        "claude-3", "gemini", "qvq", "internvl", "deepseek-vl",
+        "phi-3-vision", "glm-4v",
+    ])
 
 # 图片后缀
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico"}
@@ -134,33 +141,67 @@ TEXT_EXTS = {
 MAX_PRELOAD_CHARS = 8000
 
 
-def _build_user_message(text: str, file_id: str = None) -> dict:
+def _build_user_message(text: str, file_ids: list = None) -> dict:
     """
-    构建用户消息，智能处理上传文件：
+    构建用户消息，支持多个上传文件。
 
     - 文本类文件：直接预读内容注入消息，LLM 无需额外工具调用
     - 图片 + 多模态模型：base64 image_url，模型可"看见"图片
     - 图片 + 纯文本模型：告知路径，提示 Agent 用 process_image 工具处理
     - PDF/Office 等：告知路径 + 建议用对应工具读取
     - 其他二进制：仅告知路径
+
+    Args:
+        text: 用户输入文字
+        file_ids: 上传文件 ID 列表，支持单文件兼容（传入字符串自动转列表）
     """
-    if not file_id:
+    # 兼容单文件
+    if isinstance(file_ids, (str, type(None))):
+        file_ids = [file_ids] if file_ids else []
+
+    if not file_ids:
         return {"role": "user", "content": text}
 
+    # 逐个处理文件
+    parts = [{"type": "text", "text": text}]
+    extra_texts = []
+
+    for fid in file_ids:
+        result = _process_single_file(fid)
+        if result is None:
+            continue
+        content_part, extra_text = result
+        if content_part is not None:
+            parts.append(content_part)
+        if extra_text:
+            extra_texts.append(extra_text)
+
+    # 如果有额外文本信息，追加到 text part 末尾
+    if extra_texts:
+        parts[0]["text"] += "\n\n" + "\n\n".join(extra_texts)
+
+    # 如果只有一个 text part，简化返回
+    if len(parts) == 1:
+        return {"role": "user", "content": parts[0]["text"]}
+
+    return {"role": "user", "content": parts}
+
+
+def _process_single_file(file_id: str) -> tuple:
+    """处理单个上传文件，返回 (content_part, extra_text)"""
     # 查找上传的文件
     file_path = None
     filename = None
     for fname in os.listdir(UPLOAD_DIR):
         if fname.startswith(file_id):
             file_path = os.path.join(UPLOAD_DIR, fname)
-            filename = fname  # 完整文件名（含后缀）
+            filename = fname
             break
 
     if not file_path or not os.path.exists(file_path):
-        return {"role": "user", "content": text}
+        return None
 
-    model = (AppState.get_effective_model() or "").lower()
-    is_multimodal = any(mm in model for mm in MULTIMODAL_MODELS)
+    is_multimodal = _model_has_vision(AppState.get_effective_model() or "")
     ext = os.path.splitext(file_path)[1].lower()
 
     # ── 分支 1：图片 + 多模态模型 → base64 ──
@@ -174,70 +215,44 @@ def _build_user_message(text: str, file_id: str = None) -> dict:
             ".svg": "image/svg+xml", ".ico": "image/x-icon",
         }
         mime = mime_map.get(ext, "image/png")
-        return {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": text},
-                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
-            ]
-        }
+        return ({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}, "")
 
     # ── 分支 2：文本类文件 → 预读内容 ──
     if ext in TEXT_EXTS:
-        try:
-            # 尝试 utf-8，失败则用 gbk（Windows 常见编码）
-            for encoding in ("utf-8", "gbk", "latin-1"):
-                try:
-                    with open(file_path, "r", encoding=encoding) as f:
-                        content = f.read()
-                    break
-                except UnicodeDecodeError:
-                    continue
-            else:
-                # 所有编码都失败，当二进制处理
-                return {
-                    "role": "user",
-                    "content": f"{text}\n\n[用户上传了文件: {filename}，路径: {file_path}，无法解码为文本]"
-                }
+        for encoding in ("utf-8", "gbk", "latin-1"):
+            try:
+                with open(file_path, "r", encoding=encoding) as f:
+                    content = f.read()
+                break
+            except UnicodeDecodeError:
+                continue
+        else:
+            return (None, f"[用户上传了文件: {filename}，路径: {file_path}，无法解码为文本]")
 
-            # 截断过长内容
-            truncated = False
-            if len(content) > MAX_PRELOAD_CHARS:
-                content = content[:MAX_PRELOAD_CHARS]
-                truncated = True
+        truncated = False
+        if len(content) > MAX_PRELOAD_CHARS:
+            content = content[:MAX_PRELOAD_CHARS]
+            truncated = True
 
-            return {
-                "role": "user",
-                "content": (
-                    f"{text}\n\n"
-                    f"--- 用户上传文件: {filename} ---\n"
-                    f"文件绝对路径: {file_path}\n"
-                    f"内容如下（{'前 ' + str(MAX_PRELOAD_CHARS) + ' 字符，已截断' if truncated else '全文'}）:\n"
-                    f"```{ext.lstrip('.')}\n{content}\n```\n"
-                    f"{'(文件过长已截断，如需完整内容请用 read_file 工具读取: ' + file_path + ')' if truncated else ''}"
-                    f"\n[注意：文件内容已直接提供给你，无需再调用 read_file 工具]"
-                )
-            }
-        except Exception:
-            # 读取失败，告知路径
-            return {
-                "role": "user",
-                "content": f"{text}\n\n[用户上传了文件: {filename}，路径: {file_path}，读取失败]"
-            }
+        extra = (
+            f"--- 用户上传文件: {filename} ---\n"
+            f"文件绝对路径: {file_path}\n"
+            f"内容如下（{'前 ' + str(MAX_PRELOAD_CHARS) + ' 字符，已截断' if truncated else '全文'}）:\n"
+            f"```{ext.lstrip('.')}\n{content}\n```\n"
+            f"{'(文件过长已截断，如需完整内容请用 read_file 工具读取: ' + file_path + ')' if truncated else ''}"
+            f"\n[注意：文件内容已直接提供给你，无需再调用 read_file 工具]"
+        )
+        return (None, extra)
 
-    # ── 分支 3：图片 + 纯文本模型 → 告知路径，建议用工具 ──
+    # ── 分支 3：图片 + 纯文本模型 → 告知路径 ──
     if ext in IMAGE_EXTS:
-        return {
-            "role": "user",
-            "content": (
-                f"{text}\n\n"
-                f"[用户上传了图片: {filename}，绝对路径: {file_path}]\n"
-                f'当前模型不支持直接查看图片。如需处理此图片（识别内容、生成新图等），请使用 process_image 工具，'
-                f'传入 image_path="{file_path}"。'
-            )
-        }
+        return (None,
+            f"[用户上传了图片: {filename}，绝对路径: {file_path}]\n"
+            f'当前模型不支持直接查看图片。如需处理此图片（识别内容、生成新图等），请使用 process_image 工具，'
+            f'传入 image_path="{file_path}"。'
+        )
 
-    # ── 分支 4：PDF / Office / 其他二进制 → 告知路径 + 建议工具 ──
+    # ── 分支 4：PDF / Office / 其他 → 告知路径 + 建议工具 ──
     tool_hints = {
         ".pdf":  "请使用 PDF 技能读取内容（如有）。",
         ".docx": "请使用 DOCX 技能读取内容（如有）。",
@@ -246,15 +261,10 @@ def _build_user_message(text: str, file_id: str = None) -> dict:
         ".pptx": "请使用 PPTX 技能读取内容（如有）。",
     }
     hint = tool_hints.get(ext, "")
-
-    return {
-        "role": "user",
-        "content": (
-            f"{text}\n\n"
-            f"[用户上传了文件: {filename}，绝对路径: {file_path}]"
-            + (f"\n{hint}" if hint else "")
-        )
-    }
+    return (None,
+        f"[用户上传了文件: {filename}，绝对路径: {file_path}]"
+        + (f"\n{hint}" if hint else "")
+    )
 
 
 def _get_or_create_session(session_id: str = None) -> str:
@@ -310,7 +320,7 @@ def submit_approval(task_id: str, approved: bool) -> bool:
 
 
 # 需要用户确认的工具列表
-TOOLS_REQUIRING_APPROVAL = {"execute_command"}
+TOOLS_REQUIRING_APPROVAL = {"execute_command", "delete_file"}
 
 
 def _load_session_from_file(session_id: str) -> List[Dict]:
@@ -454,7 +464,7 @@ def _is_failure(result_content: str) -> bool:
 
 # ==================== 非流式对话 ====================
 
-def chat_sync(session_id: str, user_message: str, file_id: str = None, max_iterations: int = 15) -> dict:
+def chat_sync(session_id: str, user_message: str, file_ids: list = None, max_iterations: int = 15) -> dict:
     """
     同步对话 —— 完整执行工具链后返回结果
     """
@@ -472,7 +482,7 @@ def chat_sync(session_id: str, user_message: str, file_id: str = None, max_itera
     tools = _select_tools(user_message)  # 两阶段选择：先选技能再取对应 Schema
     system_prompt = _build_system_prompt()
 
-    messages.append(_build_user_message(user_message, file_id))
+    messages.append(_build_user_message(user_message, file_ids))
 
     iteration = 0
     task_finished = False
@@ -633,7 +643,7 @@ def chat_sync(session_id: str, user_message: str, file_id: str = None, max_itera
 
 # ==================== 流式对话（SSE） ====================
 
-async def chat_stream(session_id: str, user_message: str, file_id: str = None, max_iterations: int = 15) -> AsyncGenerator[str, None]:
+async def chat_stream(session_id: str, user_message: str, file_ids: list = None, max_iterations: int = 15) -> AsyncGenerator[str, None]:
     """
     流式对话 —— 每步工具调用都实时推送事件。支持前端取消。
     """
@@ -655,7 +665,7 @@ async def chat_stream(session_id: str, user_message: str, file_id: str = None, m
     system_prompt = _build_system_prompt()
 
     # 构建用户消息（可能附带文件）
-    user_msg = _build_user_message(user_message, file_id)
+    user_msg = _build_user_message(user_message, file_ids)
     messages.append(user_msg)
     yield f"data: {json.dumps({'type': 'session', 'session_id': sid})}\n\n"
 
@@ -893,7 +903,7 @@ async def chat_stream(session_id: str, user_message: str, file_id: str = None, m
 
         elif text_content:
             messages.append({"role": "assistant", "content": text_content})
-            yield f"data: {json.dumps({'type': 'reply', 'content': text_content})}\n\n"
+            # 不 yield reply 事件 — text_stream 已实时推送过，避免前端重复展示
             break
         else:
             break
@@ -1093,7 +1103,7 @@ def clean_all_memory() -> dict:
             except Exception as e:
                 errors.append(f"sessions/{fname}: {e}")
 
-    # 2. 清理上传文件
+    # 2. 清理上传文件（保留工作目录，只清旧 uploads）
     upload_dir = os.path.join(os.path.dirname(__file__), "..", "uploads")
     if os.path.isdir(upload_dir):
         for fname in os.listdir(upload_dir):

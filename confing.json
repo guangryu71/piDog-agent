@@ -1,12 +1,4 @@
 {
-  "qwen_config": {
-    "provider": "deepseek",
-    "api_key": "sk-07a5e328fedd4f0dafe51230e8bd302c",
-    "base_url": "https://api.deepseek.com/v1",
-    "model": "deepseek-v4-flash",
-    "temperature": 0.7,
-    "max_tokens": 3000
-  },
   "skills_directory": "skills",
   "history_path": "D:/developer/myProject/fianl_show/smart_agent_new/PiDog/backend/sessions",
   "working_directory": "D:/developer/myProject/buffer/smart_agent_new/workplace",
@@ -20,17 +12,16 @@
     "engine": "edge",
     "executable_path": "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
   },
-  "img_gen_config": {
-    "provider": "dashscope_img_gen",
-    "api_key": "",
-    "model": "wanx2.1-t2i-plus"
-  },
-  "img_und_config": {
-    "provider": "dashscope_img_und",
-    "api_key": "",
-    "model": "qwen-vl-max"
-  },
   "modelscope_config": {
     "token": "ms-353efc28-8a37-44cb-9e85-02041901c8a7"
+  },
+  "model_config": {
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "base_url": "https://api.deepseek.com/v1",
+    "api_key": "sk-07a5e328fedd4f0dafe51230e8bd302c"
+  },
+  "ocr_config": {
+    "api_key": "sk-mhkjooubxkbfwexftuoaixduuzbgxowlowktdbckpidccacp"
   }
 }

@@ -10,8 +10,9 @@ function renderChatPage(container) {
                 <span class="session-id" id="chat-session-id">—</span>
                 <button class="btn btn-sm" id="chat-new-session">+ New</button>
                 <button class="btn btn-sm" id="chat-compact">🗜 Compact</button>
-                <span style="flex:1;"></span>
+                <span id="chat-model-name" style="flex:1;text-align:center;font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">加载中...</span>
                 <button class="btn btn-sm" id="chat-sessions-btn">📋 History</button>
+                <span id="chat-model-key-status" style="margin-left:4px;"></span>
             </div>
 
             <div class="chat-messages" id="chat-messages">
@@ -25,8 +26,9 @@ function renderChatPage(container) {
                 <label class="btn btn-sm chat-upload-btn" id="chat-upload-btn" title="Upload file">
                     📎
                 </label>
-                <input type="file" id="chat-file-input" style="display:none;" multiple>
-                <span id="chat-file-indicator" class="chat-file-indicator" style="display:none;"></span>
+                <input type="file" id="chat-file-input" style="display:none;" multiple accept="*/*">
+                <div id="chat-file-bar" class="chat-file-bar" style="display:none;"></div>
+                <div id="chat-file-popup" class="chat-file-popup" style="display:none;"></div>
                 <input class="input" id="chat-input" placeholder="Type your message... (Enter to send)" autofocus>
 
                 <button class="btn btn-primary" id="chat-send">Send</button>
@@ -43,9 +45,8 @@ function renderChatPage(container) {
 
     let sessionId = null;
     let isBusy = false;
-    let pendingFileId = null;  // 待发送的文件 ID
-    let pendingFileName = null;
-    let selectorData = null;  // {type: "skill"|"mcp", items: [...]}
+    let pendingFiles = [];       // 待发送的文件列表 [{fileId, fileName, fileType, size}]
+    let selectorData = null;    // {type: "skill"|"mcp", items: [...]}
     let selectorCache = {};   // skill/MCP 列表缓存
     let selectedSkills = [];
     let selectedMcps = [];
@@ -392,8 +393,13 @@ function renderChatPage(container) {
 
         // 构建显示文本
         let displayText = text;
-        if (pendingFileId) {
-            displayText = `📎 ${pendingFileName || 'file'}\n${text}`;
+        const fileIds = pendingFiles.map(f => f.fileId);
+        if (pendingFiles.length > 0) {
+            const labels = pendingFiles.map(f => {
+                const icon = isImageExt(f.fileName) ? '🖼️' : '📄';
+                return `${icon} ${f.fileName}`;
+            });
+            displayText = `${labels.join('\n')}\n${text}`;
         }
         addMsg('user', displayText);
 
@@ -403,12 +409,11 @@ function renderChatPage(container) {
         _textCardIter = -1;
 
         try {
-            const res = await api.chatStreamUrl(text, sessionId, pendingFileId);
+            const res = await api.chatStreamUrl(text, sessionId, fileIds.length > 0 ? fileIds : null);
 
             // 发送后清除文件状态
-            pendingFileId = null;
-            pendingFileName = null;
-            updateFileIndicator();
+            pendingFiles = [];
+            updateFileBar();
 
             const reader = res.body.getReader();
             readerRef = reader;
@@ -700,15 +705,75 @@ function renderChatPage(container) {
         });
     }
 
-    // ---- File Upload ----
-    function updateFileIndicator() {
-        const indicator = document.getElementById('chat-file-indicator');
-        if (pendingFileId && pendingFileName) {
-            indicator.textContent = `📎 ${pendingFileName}`;
-            indicator.style.display = '';
+    // ---- Multi-File Upload ----
+    const MAX_IMAGES = 5;
+    const MAX_FILES = 5;
+
+    function isImageExt(name) {
+        return /\.(jpg|jpeg|png|gif|webp|bmp|svg|ico)$/i.test(name);
+    }
+
+    function updateFileBar() {
+        const bar = document.getElementById('chat-file-bar');
+        const popup = document.getElementById('chat-file-popup');
+        if (!bar || !popup) return;
+
+        if (pendingFiles.length === 0) {
+            bar.style.display = 'none';
+            popup.style.display = 'none';
+            return;
+        }
+
+        // 始终显示折叠的 pill（紧凑行内样式）
+        bar.style.display = 'inline-flex';
+        const imgCount = pendingFiles.filter(f => isImageExt(f.fileName)).length;
+        const fileCount = pendingFiles.length - imgCount;
+        let label = '📎';
+        if (imgCount > 0 && fileCount > 0) label += `${imgCount}图${fileCount}文`;
+        else if (imgCount > 0) label += `${imgCount}张图片`;
+        else label += `${fileCount}个文件`;
+        const isExpanded = bar.dataset.expanded === '1';
+        bar.innerHTML = `<span class="file-bar-pill" id="file-bar-toggle">${label} <span class="file-bar-arrow">${isExpanded ? '▾' : '▸'}</span></span>`;
+
+        // 弹出面板
+        if (isExpanded) {
+            let listHtml = '<div class="file-popup-list">';
+            pendingFiles.forEach(function(f, idx) {
+                const icon = isImageExt(f.fileName) ? '🖼️' : '📄';
+                const name = f.fileName.length > 28 ? f.fileName.slice(0, 26) + '…' : f.fileName;
+                listHtml += `<div class="file-popup-item">
+                    <span class="file-popup-icon">${icon}</span>
+                    <span class="file-popup-name" title="${escapeHtml(f.fileName)}">${escapeHtml(name)}</span>
+                    <span class="file-popup-del" data-index="${idx}">✕</span>
+                </div>`;
+            });
+            listHtml += '</div>';
+            popup.innerHTML = listHtml;
+            popup.style.display = '';
+
+            // 绑定删除
+            popup.querySelectorAll('.file-popup-del').forEach(function(btn) {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const idx = parseInt(this.dataset.index);
+                    pendingFiles.splice(idx, 1);
+                    if (pendingFiles.length === 0) {
+                        bar.dataset.expanded = '0';
+                    }
+                    updateFileBar();
+                });
+            });
         } else {
-            indicator.textContent = '';
-            indicator.style.display = 'none';
+            popup.style.display = 'none';
+        }
+
+        // 绑定 pill 点击切换
+        const toggle = document.getElementById('file-bar-toggle');
+        if (toggle) {
+            toggle.addEventListener('click', function() {
+                bar.dataset.expanded = bar.dataset.expanded === '1' ? '0' : '1';
+                updateFileBar();
+            });
         }
     }
 
@@ -716,18 +781,38 @@ function renderChatPage(container) {
         const files = this.files;
         if (!files || files.length === 0) return;
 
-        const file = files[0]; // 取第一个文件
-        try {
-            const result = await api.uploadFile(file);
-            if (result.ok) {
-                pendingFileId = result.file_id;
-                pendingFileName = result.filename;
-                updateFileIndicator();
+        let imgCount = pendingFiles.filter(f => isImageExt(f.fileName)).length;
+        let fileCount = pendingFiles.length - imgCount;
+
+        for (const file of files) {
+            const isImg = isImageExt(file.name);
+            if (isImg && imgCount >= MAX_IMAGES) {
+                addMsg('assistant', `⚠️ 最多上传 ${MAX_IMAGES} 张图片，已满`, 'error');
+                continue;
             }
-        } catch (e) {
-            addMsg('assistant', 'File upload failed: ' + e.message, 'error');
+            if (!isImg && fileCount >= MAX_FILES) {
+                addMsg('assistant', `⚠️ 最多上传 ${MAX_FILES} 个文件，已满`, 'error');
+                continue;
+            }
+
+            try {
+                const result = await api.uploadFile(file);
+                if (result.ok) {
+                    pendingFiles.push({
+                        fileId: result.file_id,
+                        fileName: result.filename,
+                        fileType: result.type,
+                        size: result.size,
+                    });
+                    if (isImg) imgCount++;
+                    else fileCount++;
+                }
+            } catch (e) {
+                addMsg('assistant', `❌ 文件上传失败: ${escapeHtml(file.name)} — ${escapeHtml(e.message)}`, 'error');
+            }
         }
-        this.value = ''; // 清空 input，允许重复上传同一文件
+        this.value = '';
+        updateFileBar();
     });
 
     // ---- Event Listeners ----
@@ -817,6 +902,7 @@ function renderChatPage(container) {
         _textCard = null;
         _textCardIter = -1;
         msgContainer.innerHTML = '<div style="text-align:center;color:var(--text-dim);margin-top:80px;font-size:13px;">🐕 New session. Ask me anything.</div>';
+        updateModelBar();
     });
 
     // Compact
@@ -977,6 +1063,28 @@ function renderChatPage(container) {
     window.loadSession = function (sid) {
         loadSessionHistory(sid);
     };
+
+    // ---- 更新模型状态栏 ----
+    async function updateModelBar() {
+        try {
+            const st = await api.getModelStatus();
+            const nameEl = document.getElementById('chat-model-name');
+            const keyEl = document.getElementById('chat-model-key-status');
+            if (nameEl) nameEl.textContent = `${st.current_provider} / ${st.current_model}`;
+            if (keyEl) {
+                const hasKey = st.has_global_key;
+                keyEl.innerHTML = hasKey
+                    ? '<span style="color:var(--green);">✅ Key 已配置</span>'
+                    : '<span style="color:var(--red);">⚠️ 未配置 API Key</span>';
+            }
+        } catch (_) {
+            const nameEl = document.getElementById('chat-model-name');
+            if (nameEl) nameEl.textContent = '模型状态获取失败';
+        }
+    }
+    updateModelBar();
+    // 注册页面切换回调：切回 Chat 时刷新模型状态
+    window.onPageShow && window.onPageShow('chat', updateModelBar);
 
     // ---- 首次加载：尝试恢复最近的会话历史 ----
     (async function initSession() {

@@ -21,15 +21,15 @@ const api = {
     },
 
     // ---- Chat ----
-    chat(message, sessionId = null, fileId = null) {
-        return this._fetch('POST', '/api/chat', { message, session_id: sessionId, stream: false, file_id: fileId });
+    chat(message, sessionId = null, fileIds = null) {
+        return this._fetch('POST', '/api/chat', { message, session_id: sessionId, stream: false, file_ids: fileIds });
     },
 
-    chatStreamUrl(message, sessionId = null, fileId = null) {
+    chatStreamUrl(message, sessionId = null, fileIds = null) {
         return fetch(API_BASE + '/api/chat/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message, session_id: sessionId, stream: true, file_id: fileId }),
+            body: JSON.stringify({ message, session_id: sessionId, stream: true, file_ids: fileIds }),
         });
     },
 
@@ -60,22 +60,16 @@ const api = {
     },
     cleanAllMemory() { return this._fetch('POST', '/api/chat/clean'); },
 
-    // ---- Logic Model ----
+    // ---- Model ----
     getModelStatus() { return this._fetch('GET', '/api/model'); },
     switchModel(provider, model = null, apiKey = null) {
         return this._fetch('POST', '/api/model/switch', { provider, model, api_key: apiKey });
     },
-
-    // ---- Image Generation Model ----
-    getImgGenStatus() { return this._fetch('GET', '/api/model/img-gen'); },
-    switchImgGen(provider, model = null, apiKey = null) {
-        return this._fetch('POST', '/api/model/img-gen/switch', { category: 'img_gen', provider, model, api_key: apiKey });
+    saveApiKey(apiKey) {
+        return this._fetch('POST', '/api/model/apikey', { provider: '', api_key: apiKey });
     },
-
-    // ---- Image Understanding Model ----
-    getImgUndStatus() { return this._fetch('GET', '/api/model/img-und'); },
-    switchImgUnd(provider, model = null, apiKey = null) {
-        return this._fetch('POST', '/api/model/img-und/switch', { category: 'img_und', provider, model, api_key: apiKey });
+    saveOcrApiKey(apiKey) {
+        return this._fetch('POST', '/api/model/ocr-apikey', { api_key: apiKey });
     },
 
     // ---- Tools ----

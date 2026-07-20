@@ -22,6 +22,8 @@
 
     // 缓存各页面容器 DOM，切换时只切换显示/隐藏，不销毁重建
     const pageContainers = {};
+    // 页面显示回调：切回某页面时触发刷新
+    const pageShowCallbacks = {};
 
     // ---- 导航切换 ----
     navItems.forEach(item => {
@@ -39,8 +41,9 @@
             currentPage = page;
 
             if (pageContainers[page]) {
-                // 已渲染过 → 直接显示
+                // 已渲染过 → 直接显示 + 触发刷新回调
                 pageContainers[page].style.display = '';
+                if (pageShowCallbacks[page]) pageShowCallbacks[page]();
             } else {
                 // 首次进入 → 创建容器并渲染
                 const div = document.createElement('div');
@@ -51,6 +54,11 @@
             }
         });
     });
+
+    // 页面显示回调注册函数
+    window.onPageShow = function (page, fn) {
+        pageShowCallbacks[page] = fn;
+    };
 
     // ---- 首次加载（chat）----
     const chatDiv = document.createElement('div');

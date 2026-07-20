@@ -8,21 +8,23 @@ from fastapi import APIRouter, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 from api_schemas.schemas import ChatRequest, ChatResponse, ApprovalRequest
 from services import agent_service
+from config import WORKING_DIRECTORY
 
 router = APIRouter(prefix="/api/chat", tags=["Chat"])
 
-# 上传文件存放目录
-UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads")
+# 上传文件存放目录 → 使用工作目录（confing.json 的 working_directory）
+UPLOAD_DIR = WORKING_DIRECTORY if WORKING_DIRECTORY else os.path.join(os.path.dirname(__file__), "..", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 @router.post("", response_model=ChatResponse)
 def chat(req: ChatRequest):
     """同步对话 —— 完整执行后返回"""
+    file_ids = req.file_ids or ([req.file_id] if req.file_id else None)
     result = agent_service.chat_sync(
         session_id=req.session_id,
         user_message=req.message,
-        file_id=req.file_id,
+        file_ids=file_ids,
     )
     return ChatResponse(
         session_id=result["session_id"],
@@ -34,11 +36,12 @@ def chat(req: ChatRequest):
 @router.post("/stream")
 async def chat_stream(req: ChatRequest):
     """流式对话 —— SSE 实时推送每步工具调用"""
+    file_ids = req.file_ids or ([req.file_id] if req.file_id else None)
     return StreamingResponse(
         agent_service.chat_stream(
             session_id=req.session_id,
             user_message=req.message,
-            file_id=req.file_id,
+            file_ids=file_ids,
         ),
         media_type="text/event-stream",
         headers={

@@ -8,16 +8,21 @@ function renderWorkflowPage(container) {
     // ── DOM 辅助 ──
     function $(id) { return container.querySelector('#' + id); }
 
-    // ── 常量 ──
-    var API_BASE = 'https://api.siliconflow.cn/v1';
-    var CACHE_KEY = 'sf_models_cache', CACHE_TIME_KEY = 'sf_models_cache_time', CACHE_DURATION = 10 * 60 * 1000, AUTO_SAVE_KEY = 'sf_workflow_autosave';
+    // ── 提供商配置 ──
+    var PROVIDERS = {
+        siliconflow: { name: '硅基流动', icon: '✨', base_url: 'https://api.siliconflow.cn/v1', api_key_storage: 'sf_api_key', model_cache: 'sf_models_cache', cache_time: 'sf_models_cache_time' },
+        bailian:     { name: '阿里云百炼', icon: '☁️', base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', api_key_storage: 'bl_api_key', model_cache: 'bl_models_cache', cache_time: 'bl_models_cache_time' },
+    };
+    var selectedProvider = localStorage.getItem('wf_selected_provider') || 'siliconflow';
+    function curProv() { return PROVIDERS[selectedProvider] || PROVIDERS.siliconflow; }
+    var CACHE_DURATION = 10 * 60 * 1000, AUTO_SAVE_KEY = 'sf_workflow_autosave';
 
     // ── 状态 ──
     var nodes = [], connections = [], nodeIdCounter = 0, selectedNodeId = null;
     var dragState = { active: false, nodeId: null, offsetX: 0, offsetY: 0 };
     var connectDrag = { active: false, fromNodeId: null, fromPortId: null, fromPortType: null, currentX: 0, currentY: 0 };
     var isRunning = false, stopRequested = false, abortController = null, autoSaveEnabled = true, canvasPan = { x: 0, y: 0 }, canvasZoom = 1, fetchedModels = [];
-    var apiKey = localStorage.getItem('sf_api_key') || '';
+    var apiKey = localStorage.getItem(curProv().api_key_storage) || '';
     var collapsedCats = {};
 
     // 多工作台
@@ -101,7 +106,13 @@ function renderWorkflowPage(container) {
     container.innerHTML =
         '<div class="workflow-page" style="height:100%;">' +
         '  <div class="wf-sidebar">' +
-        '    <div class="wf-sidebar-header">✨ 硅基流动 · 模型广场</div>' +
+        '    <div class="wf-sidebar-header">' +
+        '      <select id="wfProviderSelect" style="background:transparent;border:none;color:#fff;font-weight:600;font-size:15px;cursor:pointer;outline:none;">' +
+        '        <option value="siliconflow" style="background:#2a2a33;color:#fff;">✨ 硅基流动</option>' +
+        '        <option value="bailian" style="background:#2a2a33;color:#fff;">☁️ 阿里云百炼</option>' +
+        '      </select>' +
+        '      <span style="color:#a0a0b8;">· 模型广场</span>' +
+        '    </div>' +
         '    <div class="wf-api-section">' +
         '      <input type="password" id="wfApiKeyInput" placeholder="输入 SiliconFlow API Key ..." />' +
         '      <div class="wf-api-actions">' +
@@ -110,16 +121,19 @@ function renderWorkflowPage(container) {
         '      </div>' +
         '      <div class="wf-api-status" id="wfApiStatus">输入 API Key 后点击加载</div>' +
         '    </div>' +
-        '    <div class="wf-mgmt">' +
-        '      <div class="wf-title">📂 工作流管理</div>' +
-        '      <div class="wf-row">' +
+        '    <div class="wf-sidebar-views" id="wfSidebarViews">' +
+        '      <div id="wfSidebarMainView">' +
+        '    <div class="wf-category">📂 工作流管理</div>' +
+        '    <div class="wf-row">' +
         '        <button id="wfSaveWfBtn">💾 保存到文件</button>' +
         '        <button id="wfLoadWfBtn">📂 加载工作流</button>' +
         '      </div>' +
         '      <div class="wf-row">' +
         '        <button id="wfAutoSaveToggle">⏸ 自动保存: 开</button>' +
         '      </div>' +
-        '    </div>' +
+        '      <div class="wf-row">' +
+        '        <button id="wfAssetsBtn">📂 工作流资产</button>' +
+        '      </div>' +
         '    <div class="wf-category">📥 媒体输入</div>' +
         '    <button class="wf-media-btn" data-media="text"><span>📄</span> 文本输入</button>' +
         '    <button class="wf-media-btn" data-media="image"><span>🖼️</span> 图片输入</button>' +
@@ -139,6 +153,17 @@ function renderWorkflowPage(container) {
         '    <div class="wf-category">📤 最终输出</div>' +
         '    <button class="wf-output-btn" data-output="display"><span>🖥️</span> 输出内容展示</button>' +
         '    <button class="wf-output-btn" data-output="save"><span>💾</span> 保存到本地</button>' +
+        '      </div>' +
+        '      <div id="wfSidebarAssetsView" style="display:none;">' +
+        '        <div class="wf-sidebar-view-header">' +
+        '          <button id="wfAssetsBackBtn" class="wf-back-btn">← 返回</button>' +
+        '          <span>📂 工作流资产</span>' +
+        '        </div>' +
+        '        <div id="wfAssetsContainer" class="wf-assets-container" style="max-height:none;">' +
+        '          <div class="wf-no-models">运行工作流后自动保存资产</div>' +
+        '        </div>' +
+        '      </div>' +
+        '    </div>' +
         '    <div class="wf-sidebar-footer">🖱 拖拽端口连线 · 连线可删除 · 循环: next→next 回传</div>' +
         '  </div>' +
         '  <div class="wf-workspace-area">' +
@@ -183,18 +208,45 @@ function renderWorkflowPage(container) {
     var wfFileInput = $('wfFileInput');
 
     // ── 模型分类 ──
-    function categorizeModelId(id) {
+    function categorizeModelId(id, caps) {
+        var cats = [];
+
+        // ── 第1优先级：API capabilities 收集所有匹配类别 ──
+        if (caps) {
+            if (caps.image_generation)   cats.push('image-gen');
+            if (caps.video_generation)   cats.push('video-gen');
+            if (caps.text_to_speech)     cats.push('tts');
+            if (caps.audio_transcription || caps.speech_recognition) cats.push('asr');
+            if (caps.multimodal_chat || caps.image_recognition) cats.push('image-understand');
+            // 如果有任何专门能力，chat_completion 也附加（但不作为唯一的）
+            if (caps.chat_completion && cats.length > 0) cats.push('chat');
+            // 只有 chat_completion 没有其它能力 → 纯对话模型
+            if (caps.chat_completion && cats.length === 0) cats.push('chat');
+            if (cats.length > 0) return cats;
+        }
+
+        // ── 第2优先级：模型 ID 正则匹配（用于无 capabilities 的提供商） ──
         var i = id.toLowerCase();
-        if (/kling|cogvideo|videocrafter|modelscope.*t2v|text2video|t2v-|video-gen|wan.*video/.test(i)) return 'video-gen';
-        if (/video-llama|videochat|valley|video-blip|internvideo|video-llava/.test(i)) return 'video-understand';
-        if (/stable-diffusion|flux|sdxl|sd3|dall-e|playground|pixart|kolors|latent-consistency|wurstchen|deepfloyd|lumina|auraflow|sana/.test(i)) return 'image-gen';
-        if (/vl\d?$|vision|internvl|cogvlm|deepseek-vl|qwen2?-vl|minicpmv|glm-4v|llava|yi-vl|openbmb.*vl|phi.*vision/.test(i)) return 'image-understand';
-        if (/ocr|got-|image-to-text|img2txt|visual.*qa|visual.*ground|grounding|detection|segmentation|sam-|clip-|imagebind|image-editor|inpainting|outpainting/.test(i)) return 'vision';
-        if (/cosyvoice|tts-?1|fishtalk|chattts|gptsovits|bark|vall-e/.test(i)) return 'tts';
-        if (/whisper|sensevoice|parakeet|asr|speech.?recog|voice.?recog|transcri/.test(i)) return 'asr';
-        if (/deepseek.*r1|qwq|reasoning|deep.*think|o1-|o3-/.test(i)) return 'reasoning';
-        if (/embedding|rerank|bge|bce-embedding|gte|text2vec/.test(i)) return null;
-        return 'chat';
+
+        // 过滤掉嵌入/重排模型
+        if (/embedding|rerank|bge|bce-embedding|gte|text2vec/.test(i)) return [];
+
+        if (/kling|cogvideo|videocrafter|modelscope.*t2v|text2video|t2v-|video-gen|wan.*video/.test(i)) cats.push('video-gen');
+        if (/video-llama|videochat|valley|video-blip|internvideo|video-llava/.test(i)) cats.push('video-understand');
+        if (/stable-diffusion|sdxl|sd3|sana|flux|pixart|kolors|latent-consistency|wurstchen|deepfloyd|lumina|auraflow|dall-e|playground|wanx|imagen|image/.test(i)) cats.push('image-gen');
+        if (/[-.]vl\d?$|[-.]vl[-.]|vision|internvl|cogvlm|deepseek[-.]vl|qwen[\d.]*-vl|minicpmv|glm-4v|llava|yi[-.]vl|openbmb.*vl|phi.*vision/.test(i)) cats.push('image-understand');
+        if (/ocr|got-|image-to-text|img2txt|visual.*qa|.*grounding|detection|segmentation|sam-|clip-|imagebind|image-editor|inpainting|outpainting/.test(i)) cats.push('vision');
+        if (/cosyvoice|tts-?1|fishtalk|chattts|gptsovits|bark|vall-e/.test(i)) cats.push('tts');
+        if (/whisper|sensevoice|parakeet|asr|speech.?recog|voice.?recog|transcri/.test(i)) cats.push('asr');
+        if (/deepseek.*r1|qwq|reasoning|deep.*think|o1-|o3-/.test(i)) cats.push('reasoning');
+
+        // 有匹配到专门类别 → 同时附加 chat（多模态模型也可对话）
+        if (cats.length > 0) {
+            cats.push('chat');
+            return cats;
+        }
+
+        return ['chat'];
     }
 
     function getShortName(m) { var p = m.split('/'); return p[p.length - 1]; }
@@ -210,7 +262,7 @@ function renderWorkflowPage(container) {
             case 'vision': return { max_tokens: 1024, temperature: 0.3 };
             case 'video-gen': return { width: 1280, height: 720, duration: 5 };
             case 'video-understand': return { max_tokens: 1024 };
-            case 'tts': return { voice: 'default', speed: 1.0 };
+            case 'tts': return { voice: 'alex', speed: 1.0 };
             case 'asr': return { language: 'auto' };
             default: return {};
         }
@@ -220,10 +272,10 @@ function renderWorkflowPage(container) {
         var P = {
             'chat': { i: ['text'], o: ['text'] },
             'reasoning': { i: ['text'], o: ['text'] },
-            'image-gen': { i: ['text'], o: ['image'] },
-            'image-understand': { i: ['image', 'text'], o: ['text'] },
-            'vision': { i: ['image', 'text'], o: ['text'] },
-            'video-gen': { i: ['text'], o: ['video'] },
+            'image-gen': { i: ['text', 'image', 'image2', 'image3'], o: ['image'] },
+            'image-understand': { i: ['image', 'image2', 'image3', 'text'], o: ['text'] },
+            'vision': { i: ['image', 'image2', 'image3', 'text'], o: ['text'] },
+            'video-gen': { i: ['text', 'image', 'image2', 'image3'], o: ['video'] },
             'video-understand': { i: ['video', 'text'], o: ['text'] },
             'tts': { i: ['text'], o: ['audio'] },
             'asr': { i: ['audio'], o: ['text'] },
@@ -244,20 +296,21 @@ function renderWorkflowPage(container) {
 
     // ── API ──
     async function fetchModelsFromAPI(key) {
-        var r = await fetch(API_BASE + '/models', { headers: { 'Authorization': 'Bearer ' + key } });
+        var prov = curProv();
+        var r = await fetch(prov.base_url + '/models', { headers: { 'Authorization': 'Bearer ' + key } });
         if (!r.ok) { var m = 'HTTP ' + r.status; try { var e = await r.json(); m = e.message || e.error?.message || m } catch (_) {} throw new Error(m); }
         var d = await r.json(),
             raw = d.data || [];
         var cat = raw.map(function(m) {
-            return { id: m.id, owned_by: m.owned_by || getOwner(m.id), capabilities: m.capabilities || {}, _category: categorizeModelId(m.id), _shortName: getShortName(m.id) };
-        }).filter(function(m) { return m._category !== null && CATEGORY_KEYS.indexOf(m._category) >= 0; });
-        try { localStorage.setItem(CACHE_KEY, JSON.stringify(cat));
-            localStorage.setItem(CACHE_TIME_KEY, String(Date.now())) } catch (_) {}
+            var caps = m.capabilities || {}; return { id: m.id, owned_by: m.owned_by || getOwner(m.id), capabilities: caps, _categories: categorizeModelId(m.id, caps), _shortName: getShortName(m.id) };
+        }).filter(function(m) { return m._categories && m._categories.length > 0; });
+        try { localStorage.setItem(prov.model_cache, JSON.stringify(cat));
+            localStorage.setItem(prov.cache_time, String(Date.now())) } catch (_) {}
         return cat;
     }
 
-    function loadCachedModels() { try { var c = localStorage.getItem(CACHE_KEY),
-                t = localStorage.getItem(CACHE_TIME_KEY); if (c && t && (Date.now() - Number(t)) < CACHE_DURATION) return JSON.parse(c) } catch (_) {} return null; }
+    function loadCachedModels() { try { var prov = curProv(); var c = localStorage.getItem(prov.model_cache),
+                t = localStorage.getItem(prov.cache_time); if (c && t && (Date.now() - Number(t)) < CACHE_DURATION) return JSON.parse(c) } catch (_) {} return null; }
 
     // ── 画布变换 ──
     function applyCanvasTransform() {
@@ -337,8 +390,8 @@ function renderWorkflowPage(container) {
             nodeData.modelId = modelIdOrData.id;
             nodeData.modelName = modelIdOrData._shortName;
             nodeData.owned_by = modelIdOrData.owned_by;
-            nodeData.type = modelIdOrData._category;
-            nodeData.params = JSON.parse(JSON.stringify(getDefaultParams(modelIdOrData._category)));
+            nodeData.type = type;
+            nodeData.params = JSON.parse(JSON.stringify(getDefaultParams(type)));
         } else return null;
         var ports = getPortsByType(nodeData.type);
         nodeData.inputs = ports.inputs.map(function(l, i) { return { id: id + '_in_' + i, label: l }; });
@@ -373,6 +426,7 @@ function renderWorkflowPage(container) {
             else if (node.type === 'data-monitor') body.innerHTML = buildDataMonitorBody(node);
             else if (node.type === 'output-display') body.innerHTML = buildOutputDisplayBody(node);
             else if (node.type === 'output-save') body.innerHTML = buildOutputSaveBody(node);
+            else if (node.type === 'tts') body.innerHTML = buildTTSBody(node);
             else body.innerHTML = buildModelBody(node);
 
             var ioDiv = document.createElement('div');
@@ -396,7 +450,7 @@ function renderWorkflowPage(container) {
             card.appendChild(body);
             header.addEventListener('mousedown', function(e) { onDragStart(e, node.id); });
             card.addEventListener('click', function(e) {
-                if (e.target.classList.contains('wf-delete-node') || e.target.closest('.wf-port') || e.target.closest('input') || e.target.closest('textarea')) return;
+                if (e.target.classList.contains('wf-delete-node') || e.target.closest('.wf-port') || e.target.closest('input') || e.target.closest('textarea') || e.target.closest('select')) return;
                 selectNode(node.id);
             });
             nodesLayer.appendChild(card);
@@ -419,10 +473,24 @@ function renderWorkflowPage(container) {
                 scheduleAutoSave();
             });
         });
+        container.querySelectorAll('select[data-param]').forEach(function(sel) {
+            sel.addEventListener('change', function() {
+                var n = nodes.find(function(x) { return x.id === sel.dataset.node; });
+                if (n && n.params) { n.params[sel.dataset.param] = sel.value;
+                    scheduleAutoSave(); }
+            });
+        });
         container.querySelectorAll('.wf-system-prompt').forEach(function(ta) {
             ta.addEventListener('input', function() {
                 var n = nodes.find(function(x) { return x.id === ta.dataset.node; });
                 if (n) { n.systemPrompt = ta.value;
+                    scheduleAutoSave(); }
+            });
+        });
+        container.querySelectorAll('.wf-custom-voice-input').forEach(function(inp) {
+            inp.addEventListener('input', function() {
+                var n = nodes.find(function(x) { return x.id === inp.dataset.node; });
+                if (n) { if (!n.params) n.params = {}; n.params.custom_voice = inp.value;
                     scheduleAutoSave(); }
             });
         });
@@ -469,14 +537,24 @@ function renderWorkflowPage(container) {
 
     function buildMediaFileBody(n) {
         var a = { image: 'image/*', audio: 'audio/*', video: 'video/*' };
-        return '<div class="wf-param-row"><label>📎 上传' + n.mediaType.toUpperCase() + '文件</label><input type="file" accept="' + (a[n.mediaType] || '*') + '" data-node="' + n.id + '" class="wf-file-input" /></div>';
+        var fileStatusHtml = n.fileData
+            ? '<div style="color:#8f8;font-size:11px;margin-bottom:4px;">✅ ' + escapeHtml(n.fileData.name) + '</div>'
+            : '';
+        return '<div class="wf-param-row"><label>📎 上传' + n.mediaType.toUpperCase() + '文件</label>' + fileStatusHtml + '<input type="file" accept="' + (a[n.mediaType] || '*') + '" data-node="' + n.id + '" class="wf-file-input" /></div>';
+    }
+
+    function renderContentByType(n) {
+        var c = n.savedContent;
+        if (!c) return '等待输入...';
+        var t = n.savedContentType || 'text';
+        if (t === 'image') return '<img src="' + c + '" alt="输出" style="max-width:100%;max-height:140px;border-radius:4px;" />';
+        if (t === 'audio') return '<audio controls src="' + c + '" style="width:100%;height:40px;">您的浏览器不支持音频播放</audio>';
+        if (t === 'video') return '<video controls src="' + c + '" style="max-width:100%;max-height:140px;border-radius:4px;">您的浏览器不支持视频播放</video>';
+        return typeof c === 'string' ? escapeHtml(c) : escapeHtml(JSON.stringify(c, null, 2));
     }
 
     function buildOutputDisplayBody(n) {
-        var c = n.savedContent || '等待输入...';
-        var isImg = n.savedContentType === 'image' && n.savedContent;
-        var inner = isImg ? '<img src="' + n.savedContent + '" alt="输出" />' : (typeof c === 'string' ? escapeHtml(c) : escapeHtml(JSON.stringify(c, null, 2)));
-        return '<div class="wf-param-row"><label>📺 接收内容预览</label><div class="wf-output-display" data-node="' + n.id + '">' + inner + '</div></div>';
+        return '<div class="wf-param-row"><label>📺 接收内容预览</label><div class="wf-output-display" data-node="' + n.id + '">' + renderContentByType(n) + '</div></div>';
     }
 
     function buildOutputSaveBody(n) {
@@ -486,19 +564,13 @@ function renderWorkflowPage(container) {
     }
 
     function buildDataMonitorBody(n) {
-        var c = n.savedContent || '等待数据...';
-        var isImg = n.savedContentType === 'image' && n.savedContent;
-        var inner = isImg ? '<img src="' + n.savedContent + '" alt="数据" />' : (typeof c === 'string' ? escapeHtml(c) : escapeHtml(JSON.stringify(c, null, 2)));
-        return '<div class="wf-param-row"><label>📊 流经数据预览</label><div class="wf-output-display" style="border-color:#6a4a6a;" data-node="' + n.id + '">' + inner + '</div></div>';
+        return '<div class="wf-param-row"><label>📊 流经数据预览</label><div class="wf-output-display" style="border-color:#6a4a6a;" data-node="' + n.id + '">' + renderContentByType(n) + '</div></div>';
     }
 
     function buildDataExportBody(n) {
-        var c = n.savedContent || '等待数据...';
         var dirName = n.directoryHandle?.name || n._dirName || '未选择';
         var fname = n.downloadPath || '';
-        var isImg = n.savedContentType === 'image' && n.savedContent;
-        var inner = isImg ? '<img src="' + n.savedContent + '" alt="数据" />' : (typeof c === 'string' ? escapeHtml(c) : escapeHtml(JSON.stringify(c, null, 2)));
-        return '<div class="wf-param-row"><label>📁 保存目录</label><div style="display:flex;gap:4px;"><span style="flex:1;background:#1e1e26;border:1px solid #4a4a56;color:white;padding:5px 8px;border-radius:5px;font-size:12px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(dirName) + '</span><button class="wf-dir-pick-btn" data-node="' + n.id + '">📂 选择</button></div></div><div class="wf-param-row"><label>💾 文件名（留空自动生成）</label><input type="text" value="' + escapeHtml(fname) + '" placeholder="留空自动生成" data-param="filename" data-node="' + n.id + '"/></div><div class="wf-param-row"><label>💾 最后保存内容</label><div class="wf-output-display" style="border-color:#3a5a4a;" data-node="' + n.id + '">' + inner + '</div></div>';
+        return '<div class="wf-param-row"><label>📁 保存目录</label><div style="display:flex;gap:4px;"><span style="flex:1;background:#1e1e26;border:1px solid #4a4a56;color:white;padding:5px 8px;border-radius:5px;font-size:12px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(dirName) + '</span><button class="wf-dir-pick-btn" data-node="' + n.id + '">📂 选择</button></div></div><div class="wf-param-row"><label>💾 文件名（留空自动生成）</label><input type="text" value="' + escapeHtml(fname) + '" placeholder="留空自动生成" data-param="filename" data-node="' + n.id + '"/></div><div class="wf-param-row"><label>💾 最后保存内容</label><div class="wf-output-display" style="border-color:#3a5a4a;" data-node="' + n.id + '">' + renderContentByType(n) + '</div></div>';
     }
 
     function buildModelBody(n) {
@@ -510,6 +582,63 @@ function renderWorkflowPage(container) {
                 }
             }
         }
+        if (n.modelId) h += '<div class="wf-param-row"><label>模型</label><span style="color:#aaa;font-size:10px;word-break:break-all;">' + escapeHtml(n.modelId) + '</span></div>';
+        return h;
+    }
+
+    // ── TTS 音色注册表 ──
+    // 硅基流动 CosyVoice 系列实际音色为英文名
+    var TTS_VOICES = {
+        'cosyvoice': ['alex', 'bella', 'benjamin', 'charles', 'claire', 'david', 'emma', 'james', 'lily', 'sarah', 'william'],
+        'chattts': ['female-1', 'male-1', 'child-1'],
+        'gptsovits': ['zh_female', 'zh_male', 'en_female', 'en_male', 'jp_female'],
+        'bark': ['v2/en_speaker_1', 'v2/en_speaker_2', 'v2/zh_speaker_1'],
+        '__default__': ['zh_female', 'zh_male', 'en_female', 'en_male'],
+    };
+
+    function getTTSVoices(modelId) {
+        var id = (modelId || '').toLowerCase();
+        for (var key in TTS_VOICES) {
+            if (key !== '__default__' && id.indexOf(key) >= 0) return TTS_VOICES[key];
+        }
+        return TTS_VOICES['__default__'];
+    }
+
+    // 异步获取 TTS 音色（如有专用 endpoint 则覆盖硬编码列表，目前作为扩展点）
+    var _voiceCache = {};
+    async function tryFetchTTSVoices(modelId, apiKey) {
+        if (!modelId || !apiKey) return null;
+        var prov = curProv();
+        var cacheKey = modelId + '@' + prov.name;
+        if (_voiceCache[cacheKey]) return _voiceCache[cacheKey];
+        try {
+            var r = await fetch(prov.base_url + '/audio/voices', {
+                headers: { 'Authorization': 'Bearer ' + apiKey }
+            });
+            if (r.ok) {
+                var d = await r.json();
+                var list = (d.data || d.voices || []).map(function(v) { return typeof v === 'string' ? v : (v.id || v.name || v.voice_id || ''); }).filter(Boolean);
+                if (list.length > 0) { _voiceCache[cacheKey] = list; return list; }
+            }
+        } catch (_) {}
+        return null;
+    }
+
+    function buildTTSBody(n) {
+        var voices = getTTSVoices(n.modelId);
+        var customVoice = (n.params && n.params.custom_voice) || '';
+        var curVoice = (n.params && n.params.voice) || voices[0] || 'alex';
+        if (voices.indexOf(curVoice) < 0 && !customVoice) curVoice = voices[0];
+        var h = '<div class="wf-param-row"><label>📝 待合成文本</label><textarea class="wf-system-prompt" data-node="' + n.id + '" placeholder="输入要合成的文本 ..." style="min-height:48px;">' + escapeHtml(n.systemPrompt || '') + '</textarea></div>';
+        h += '<div class="wf-param-row"><label>🎙️ 音色</label><select data-param="voice" data-node="' + n.id + '" style="background:#1e1e26;border:1px solid #4a4a56;color:white;padding:6px 8px;border-radius:5px;font-size:12px;width:100%;">';
+        for (var vi = 0; vi < voices.length; vi++) {
+            var v = voices[vi];
+            h += '<option value="' + v + '"' + (v === curVoice && !customVoice ? ' selected' : '') + '>' + v + '</option>';
+        }
+        h += '</select></div>';
+        h += '<div class="wf-param-row"><label>✏️ 自定义音色（留空则使用上方选择）</label><input type="text" class="wf-custom-voice-input" data-node="' + n.id + '" value="' + escapeHtml(customVoice) + '" placeholder="输入音色名，如 alex" style="background:#1e1e26;border:1px solid #4a4a56;color:white;padding:6px 8px;border-radius:5px;font-size:12px;width:100%;"/></div>';
+        var spd = (n.params && n.params.speed) || 1.0;
+        h += '<div class="wf-param-row"><label>⚡ 语速</label><input type="text" value="' + escapeHtml(String(spd)) + '" data-param="speed" data-node="' + n.id + '"/></div>';
         if (n.modelId) h += '<div class="wf-param-row"><label>模型</label><span style="color:#aaa;font-size:10px;word-break:break-all;">' + escapeHtml(n.modelId) + '</span></div>';
         return h;
     }
@@ -557,6 +686,15 @@ function renderWorkflowPage(container) {
     }
 
     // ── 侧边栏 ──
+    function showToast(msg, type) {
+        toastEl.textContent = msg;
+        toastEl.className = 'wf-toast-fixed show' + (type ? ' ' + type : '');
+        clearTimeout(toastEl._timer);
+        toastEl._timer = setTimeout(function() {
+            toastEl.className = 'wf-toast-fixed';
+        }, 4000);
+    }
+
     function getSearchQuery() { var el = $('wfModelSearchInput'); return el ? el.value.trim().toLowerCase() : ''; }
 
     function toggleCategory(key) { collapsedCats[key] = !collapsedCats[key];
@@ -571,7 +709,7 @@ function renderWorkflowPage(container) {
             total = 0;
         for (var ci = 0; ci < CATEGORIES.length; ci++) {
             var cat = CATEGORIES[ci];
-            var mds = fetchedModels.filter(function(m) { return m._category === cat.key; });
+            var mds = fetchedModels.filter(function(m) { return m._categories && m._categories.indexOf(cat.key) >= 0; });
             if (!mds.length) continue;
             if (q) mds = mds.filter(function(m) { return m._shortName.toLowerCase().indexOf(q) >= 0 || m.id.toLowerCase().indexOf(q) >= 0 || (m.owned_by && m.owned_by.toLowerCase().indexOf(q) >= 0); });
             if (!mds.length) continue;
@@ -580,7 +718,7 @@ function renderWorkflowPage(container) {
             html += '<div class="wf-category" data-cat-key="' + cat.key + '"><span class="wf-cat-toggle ' + (open ? 'open' : '') + '">▶</span> ' + cat.icon + ' ' + cat.label + ' <span class="wf-model-count">(' + mds.length + ')</span></div><div class="wf-dynamic-models-scroll ' + (open ? '' : 'collapsed') + '">';
             for (var mi = 0; mi < mds.length; mi++) {
                 var m = mds[mi];
-                html += '<button class="wf-model-btn" data-model-id="' + escapeHtml(m.id) + '"><span class="wf-model-icon">' + cat.icon + '</span><span class="wf-model-info"><span class="wf-model-name">' + escapeHtml(m._shortName) + '</span><span class="wf-model-provider">' + escapeHtml(m.owned_by || '') + '</span></span></button>';
+                html += '<button class="wf-model-btn" data-model-id="' + escapeHtml(m.id) + '" data-cat="' + cat.key + '"><span class="wf-model-icon">' + cat.icon + '</span><span class="wf-model-info"><span class="wf-model-name">' + escapeHtml(m._shortName) + '</span><span class="wf-model-provider">' + escapeHtml(m.owned_by || '') + '</span></span></button>';
             }
             html += '</div>';
         }
@@ -591,13 +729,49 @@ function renderWorkflowPage(container) {
             el.addEventListener('click', function() { var k = el.dataset.catKey; if (k) toggleCategory(k); });
         });
         dynamicContainer.querySelectorAll('.wf-model-btn').forEach(function(btn) {
-            btn.addEventListener('click', function(e) { e.stopPropagation(); var m = fetchedModels.find(function(x) { return x.id === btn.dataset.modelId; }); if (m) addModelNode(m); });
+            btn.addEventListener('click', function(e) { e.stopPropagation(); var m = fetchedModels.find(function(x) { return x.id === btn.dataset.modelId; }); if (m) { var t = getNodeTypeForModel(m); m._nodeType = t; startPlacement(t, m); } });
         });
     }
 
     // ── 节点操作 ──
-    function selectNode(id) { selectedNodeId = id;
-        renderAll(); }
+    function selectNode(id) {
+        selectedNodeId = id;
+        // 仅更新 class 不重建 DOM，避免文件输入等状态丢失
+        container.querySelectorAll('.wf-node-card').forEach(function(c) {
+            c.classList.toggle('selected', c.dataset.nodeId === id);
+        });
+    }
+
+    // ── 节点放置模式（点击侧边栏 → 幽灵跟随 → 点击画布放置） ──
+    var placeState = null;
+
+    function startPlacement(type, modelData) {
+        cancelPlacement();
+        var ghost = document.createElement('div');
+        ghost.className = 'wf-node-card wf-node-ghost';
+        var icon = TYPE_ICONS[type] || '🔹';
+        var name = modelData ? (modelData._shortName || modelData.modelName || type) : (TYPE_LABELS[type] || type);
+        ghost.innerHTML = '<div class="wf-node-header"><span>' + icon + ' ' + escapeHtml(name) + '</span></div><div class="wf-node-body" style="padding:30px 10px;text-align:center;color:#888;font-size:11px;">点击画布放置</div>';
+        ghost.style.cssText = 'position:absolute;pointer-events:none;opacity:0.65;z-index:999;';
+        var nl = $('wfNodesLayer');
+        if (nl) nl.appendChild(ghost);
+        placeState = { type: type, modelData: modelData, ghostEl: ghost };
+        showToast('🖱 点击画布放置节点，按 Esc 取消', '');
+    }
+
+    function cancelPlacement() {
+        if (placeState && placeState.ghostEl) {
+            placeState.ghostEl.remove();
+        }
+        placeState = null;
+    }
+
+    function placeNodeAt(x, y) {
+        if (!placeState) return;
+        var node = createNode(placeState.type, placeState.modelData, x, y);
+        if (node) { nodes.push(node); renderAll(); scheduleAutoSave(); }
+        cancelPlacement();
+    }
 
     function deleteNode(id) {
         nodes = nodes.filter(function(n) { return n.id !== id; });
@@ -627,8 +801,37 @@ function renderWorkflowPage(container) {
     function addMediaNode(mt) { var n = createNode('media-' + mt, null, 60 + Math.random() * 180, 40 + Math.random() * 160); if (n) { nodes.push(n);
             renderAll(); } }
 
-    function addModelNode(md) { var n = createNode(md._category, md, 180 + Math.random() * 220, 100 + Math.random() * 180); if (n) { nodes.push(n);
-            renderAll(); } }
+    function getNodeTypeForModel(md) {
+        if (!md) return 'chat';
+        var caps = md.capabilities || {};
+        var id = (md.id || '').toLowerCase();
+
+        // 第1优先级：capabilities（最准确）
+        if (caps.image_generation) return 'image-gen';
+        if (caps.video_generation) return 'video-gen';
+        if (caps.text_to_speech) return 'tts';
+        if (caps.speech_recognition || caps.audio_transcription) return 'asr';
+        if (caps.multimodal_chat || caps.image_recognition) return 'image-understand';
+
+        // 第2优先级：模型 ID 特征检测（独立于分类器，确保覆盖面更全）
+        if (/stable-diffusion|sdxl|sd3|sana|flux|pixart|kolors|latent-consistency|wurstchen|deepfloyd|lumina|auraflow|dall-e|playground|wanx|imagen|image/.test(id)) return 'image-gen';
+        if (/kling|cogvideo|videocrafter|modelscope.*t2v|text2video|t2v-|video-gen|wan.*video/.test(id)) return 'video-gen';
+        if (/video-llama|videochat|valley|video-blip|internvideo|video-llava/.test(id)) return 'video-understand';
+        if (/[-.]vl\d?$|[-.]vl[-.]|vision|internvl|cogvlm|deepseek[-.]vl|qwen[\d.]*-vl|minicpmv|glm-4v|llava|yi[-.]vl|openbmb.*vl|phi.*vision/.test(id)) return 'image-understand';
+        if (/cosyvoice|tts-?1|fishtalk|chattts|gptsovits|bark|vall-e/.test(id)) return 'tts';
+        if (/whisper|sensevoice|parakeet|asr|speech.?recog|voice.?recog|transcri/.test(id)) return 'asr';
+        if (/deepseek.*r1|qwq|reasoning|deep.*think|o1-|o3-/.test(id)) return 'reasoning';
+
+        return 'chat';
+    }
+
+    function addModelNode(md, nodeType) {
+        // 始终以模型自身能力生成节点，绕开分类不准的问题
+        var t = getNodeTypeForModel(md);
+        var n = createNode(t, md, 180 + Math.random() * 220, 100 + Math.random() * 180);
+        if (n) { nodes.push(n);
+            renderAll(); }
+    }
 
     function addOutputNode(ot) { var n = createNode('output-' + ot, null, 480 + Math.random() * 140, 320 + Math.random() * 100); if (n) { nodes.push(n);
             renderAll(); } }
@@ -682,7 +885,13 @@ function renderWorkflowPage(container) {
         if (n) {
             n.x = (e.clientX - r.left - dragState.offsetX - canvasPan.x) / canvasZoom;
             n.y = (e.clientY - r.top - dragState.offsetY - canvasPan.y) / canvasZoom;
-            renderAll();
+            // 仅更新拖拽节点的位置 + 连线，避免全量重建导致文件输入丢失
+            var card = container.querySelector('.wf-node-card[data-node-id="' + n.id + '"]');
+            if (card) {
+                card.style.left = n.x + 'px';
+                card.style.top = n.y + 'px';
+            }
+            renderLines();
         }
     }
 
@@ -714,7 +923,8 @@ function renderWorkflowPage(container) {
                     var fp = fn[connectDrag.fromPortType === 'output' ? 'outputs' : 'inputs'].find(function(x) { return x.id === connectDrag.fromPortId; });
                     var tp2 = tn2[tt === 'input' ? 'inputs' : 'outputs'].find(function(x) { return x.id === tp; });
                     if (fp && tp2) {
-                        var canConnect = fp.label === tp2.label || LOOP_LABELS.indexOf(fp.label) >= 0 || LOOP_LABELS.indexOf(tp2.label) >= 0;
+                        var sameImg = fp.label.indexOf('image') === 0 && tp2.label.indexOf('image') === 0;
+                        var canConnect = fp.label === tp2.label || sameImg || LOOP_LABELS.indexOf(fp.label) >= 0 || LOOP_LABELS.indexOf(tp2.label) >= 0;
                         if (canConnect) {
                             var si = connectDrag.fromPortType === 'output' ? connectDrag.fromNodeId : tn;
                             var sp = connectDrag.fromPortType === 'output' ? connectDrag.fromPortId : tp;
@@ -779,6 +989,7 @@ function renderWorkflowPage(container) {
                 node.savedContent = val;
                 node.savedContentType = dt;
                 saveDataExport(node, dt, val);
+                pendingAssets.push({ nodeId: node.id, type: node.type, modelName: node.modelName, category: 'monitor', contentType: dt || 'text', content: val, ts: Date.now() });
             }
             return val;
         }
@@ -787,17 +998,24 @@ function renderWorkflowPage(container) {
             var c = dt ? inp[dt] : null;
             node.savedContent = c;
             node.savedContentType = dt;
+            if (c !== null && c !== undefined) pendingAssets.push({ nodeId: node.id, type: node.type, modelName: node.modelName, category: 'monitor', contentType: dt || 'text', content: c, ts: Date.now() });
             return c;
         }
         if (node.type === 'output-display') { node.savedContent = inp.text || inp.image || inp.audio || inp.video || '(无数据)';
-            node.savedContentType = inp.image ? 'image' : 'text'; return node.savedContent; }
+            node.savedContentType = inp.image ? 'image' : inp.audio ? 'audio' : inp.video ? 'video' : 'text';
+            pendingAssets.push({ nodeId: node.id, type: node.type, modelName: node.modelName, category: 'output', contentType: node.savedContentType, content: node.savedContent, ts: Date.now() });
+            return node.savedContent; }
         if (node.type === 'output-save') {
             var c = inp.text || inp.image || inp.audio || inp.video || '(无数据)';
+            node.savedContent = c;
+            node.savedContentType = inp.image ? 'image' : inp.audio ? 'audio' : inp.video ? 'video' : 'text';
             saveOutputToFile(node, inp, c);
+            pendingAssets.push({ nodeId: node.id, type: node.type, modelName: node.modelName, category: 'output', contentType: node.savedContentType, content: c, ts: Date.now() });
             return c;
         }
         var userText = inp.text || '',
-            userImage = inp.image || null,
+            userImages = [inp.image, inp.image2, inp.image3].filter(function(x) { return x; }),
+            userImage = userImages[0] || null,
             userAudio = inp.audio || null;
         switch (node.type) {
             case 'chat':
@@ -807,7 +1025,7 @@ function renderWorkflowPage(container) {
                     if (node.systemPrompt) msgs.push({ role: 'system', content: node.systemPrompt });
                     msgs.push({ role: 'user', content: userText || '你好' });
                     var b = { model: node.modelId, messages: msgs, temperature: node.params?.temperature ?? 0.7, max_tokens: node.params?.max_tokens ?? 2048, stream: false };
-                    var r = await fetch(API_BASE + '/chat/completions', { signal: signal, method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+                    var r = await fetch(curProv().base_url + '/chat/completions', { signal: signal, method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
                     if (!r.ok) { var m = 'HTTP ' + r.status; try { var e = await r.json();
                             m = e.message || e.error?.message || m } catch (_) {} throw new Error((TYPE_LABELS[node.type] || node.type) + ' ' + node.modelName + ': ' + m); }
                     var j = await r.json();
@@ -817,7 +1035,8 @@ function renderWorkflowPage(container) {
                 {
                     var prompt = userText || (node.systemPrompt || '一幅美丽的风景画');
                     var b = { model: node.modelId, prompt: prompt, n: 1, size: (node.params?.width || 1024) + 'x' + (node.params?.height || 1024) };
-                    var r = await fetch(API_BASE + '/image/generations', { signal: signal, method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+                    if (userImage) b.image = userImage;
+                    var r = await fetch(curProv().base_url + '/image/generations', { signal: signal, method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
                     if (!r.ok) { var m = 'HTTP ' + r.status; try { var e = await r.json();
                             m = e.message || e.error?.message || m } catch (_) {} throw new Error('生图模型 ' + node.modelName + ': ' + m); }
                     var j = await r.json();
@@ -830,26 +1049,68 @@ function renderWorkflowPage(container) {
                     var msgs = [];
                     if (node.systemPrompt) msgs.push({ role: 'system', content: node.systemPrompt });
                     var content = [];
-                    if (userImage) content.push({ type: 'image_url', image_url: { url: userImage } });
+                    if (userImages && userImages.length > 0) {
+                        for (var ui = 0; ui < userImages.length; ui++) {
+                            content.push({ type: 'image_url', image_url: { url: userImages[ui] } });
+                        }
+                    }
                     var promptText = node.type === 'vision' ? '请分析这张图片' : '请描述这张图片';
                     content.push({ type: 'text', text: userText || promptText });
                     msgs.push({ role: 'user', content: content });
                     var b = { model: node.modelId, messages: msgs, max_tokens: node.params?.max_tokens ?? 1024, temperature: node.params?.temperature ?? 0.5, stream: false };
-                    var r = await fetch(API_BASE + '/chat/completions', { signal: signal, method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+                    var r = await fetch(curProv().base_url + '/chat/completions', { signal: signal, method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
                     if (!r.ok) { var m = 'HTTP ' + r.status; try { var e = await r.json();
                             m = e.message || e.error?.message || m } catch (_) {} throw new Error('图片理解 ' + node.modelName + ': ' + m); }
                     var j = await r.json();
                     return j.choices?.[0]?.message?.content || '(无回复)';
                 }
             case 'video-gen':
-                throw new Error('视频生成暂未开放 API 调用');
+                {
+                    // 硅基流动视频 API
+                    var submitBase = curProv().base_url + '/video';
+                    var prompt = userText || (node.systemPrompt || '一段动态视频');
+                    var submitB = { model: node.modelId, prompt: prompt, image_size: (node.params?.width || 1280) + 'x' + (node.params?.height || 720) };
+                    if (userImage) submitB.image = userImage;
+                    var subRes = await fetch(submitBase + '/submit', { signal: signal, method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(submitB) });
+                    if (!subRes.ok) { var m = 'HTTP ' + subRes.status; try { var e = await subRes.json(); m = e.message || e.error?.message || m } catch (_) {} throw new Error('视频生成 ' + node.modelName + ': ' + m); }
+                    var subData = await subRes.json();
+                    // 兼容多种返回格式: requestId / request_id / id / result.id / data.id
+                    var reqId = subData.requestId || subData.request_id || subData.id || '';
+                    if (!reqId && subData.data) reqId = subData.data.requestId || subData.data.request_id || subData.data.id || subData.data.task_id || '';
+                    if (!reqId && subData.result) reqId = subData.result.id || subData.result.request_id || '';
+                    if (!reqId) throw new Error('视频生成 ' + node.modelName + ': 未获取到任务ID');
+                    // 轮询结果：POST /v1/video/status { requestId }
+                    var maxPoll = 120;
+                    for (var pollCnt = 0; pollCnt < maxPoll; pollCnt++) {
+                        await new Promise(function(r2) { setTimeout(r2, 3000); });
+                        if (signal && signal.aborted) throw new Error('aborted');
+                        var staRes = await fetch(submitBase + '/status', { signal: signal, method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId: reqId }) });
+                        if (!staRes.ok) continue;
+                        var staData = await staRes.json();
+                        var st = (staData.status || '').toLowerCase();
+                        var vu = '';
+                        if (staData.results) vu = staData.results.video_url || staData.results.url || '';
+                        if (st === 'inqueue' || st === 'processing' || st === 'running' || st === 'queued') continue;
+                        if (st === 'succeed' || st === 'success' || st === 'completed' || st === 'done') return vu || '(视频生成完成)';
+                        if (st === 'failed') throw new Error('视频生成失败: ' + (staData.reason || staData.message || ''));
+                        // 有视频 URL 视为完成
+                        if (vu) return vu;
+                    }
+                    throw new Error('视频生成超时');
+                }
             case 'video-understand':
                 throw new Error('视频理解暂未开放 API 调用');
             case 'tts':
                 {
-                    var text = userText || (node.systemPrompt || '你好');
-                    var b = { model: node.modelId, input: text, voice: node.params?.voice || 'default', speed: node.params?.speed || 1.0 };
-                    var r = await fetch(API_BASE + '/audio/speech', { signal: signal, method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+                    var text = (node.systemPrompt || userText || '你好');
+                    var customVoice = (node.params && node.params.custom_voice) || '';
+                    var ttsVoices = (node.modelId ? getTTSVoices(node.modelId) : ['alex']);
+                    var ttsVoice = customVoice || node.params?.voice || ttsVoices[0] || 'alex';
+                    if (!customVoice && ttsVoices.indexOf(ttsVoice) < 0) ttsVoice = ttsVoices[0] || 'alex';
+                    // 硅基流动 TTS 要求 voice 为 "模型ID:音色名" 格式（如 "CosyVoice2-0.5B:alex"）
+                    var fullVoice = (curProv().base_url.indexOf('siliconflow') >= 0 && ttsVoice.indexOf(':') < 0) ? (node.modelId + ':' + ttsVoice) : ttsVoice;
+                    var b = { model: node.modelId, input: text, voice: fullVoice, response_format: 'mp3', speed: node.params?.speed || 1.0 };
+                    var r = await fetch(curProv().base_url + '/audio/speech', { signal: signal, method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
                     if (!r.ok) { var m = 'HTTP ' + r.status; try { var e = await r.json();
                             m = e.message || e.error?.message || m } catch (_) {} throw new Error('TTS ' + node.modelName + ': ' + m); }
                     var buf = await r.arrayBuffer();
@@ -864,7 +1125,7 @@ function renderWorkflowPage(container) {
                     if (userAudio instanceof File) f.append('file', userAudio);
                     else if (typeof userAudio === 'string' && userAudio.indexOf('blob:') === 0) { var resp = await fetch(userAudio); var blob = await resp.blob();
                         f.append('file', blob, 'audio.wav'); } else throw new Error('不支持的音频格式');
-                    var r = await fetch(API_BASE + '/audio/transcriptions', { signal: signal, method: 'POST', headers: { 'Authorization': 'Bearer ' + key }, body: f });
+                    var r = await fetch(curProv().base_url + '/audio/transcriptions', { signal: signal, method: 'POST', headers: { 'Authorization': 'Bearer ' + key }, body: f });
                     if (!r.ok) { var m = 'HTTP ' + r.status; try { var e = await r.json();
                             m = e.message || e.error?.message || m } catch (_) {} throw new Error('ASR ' + node.modelName + ': ' + m); }
                     var j = await r.json();
@@ -931,6 +1192,350 @@ function renderWorkflowPage(container) {
         }
     }
 
+    // ── 工作流资产 ──
+    var assets = [];
+    var pendingAssets = [];  // 由 executeNode 在执行时直接填充
+    var ASSETS_LOCAL_KEY = 'wf_assets_cache';
+
+    function blobToBase64(blob) {
+        return new Promise(function(res, rej) {
+            var r = new FileReader();
+            r.onload = function() { res(r.result); };
+            r.onerror = rej;
+            r.readAsDataURL(blob);
+        });
+    }
+
+    function saveAssetsToLocal(ts, data) {
+        try {
+            var all = JSON.parse(localStorage.getItem(ASSETS_LOCAL_KEY) || '{}');
+            // 截断大内容以节省 localStorage 空间
+            var trimmed = JSON.parse(JSON.stringify(data));
+            trimmed.nodes.forEach(function(n) {
+                if (n.contentType !== 'text' && n.content.length > 500) {
+                    n.content = n.content.substring(0, 200) + '...[已截断]';
+                }
+            });
+            all[ts] = trimmed;
+            localStorage.setItem(ASSETS_LOCAL_KEY, JSON.stringify(all));
+        } catch (_) {}
+    }
+
+    function loadAssetsFromLocal() {
+        try {
+            var all = JSON.parse(localStorage.getItem(ASSETS_LOCAL_KEY) || '{}');
+            return Object.keys(all).sort().reverse().map(function(k) { return all[k]; });
+        } catch (_) { return []; }
+    }
+
+    async function saveWorkflowAssets(duration) {
+        try {
+            console.log('[WF Assets] saveWorkflowAssets called, duration:', duration);
+            console.log('[WF Assets] pendingAssets count:', pendingAssets.length, JSON.stringify(pendingAssets.map(function(p){return p.nodeId+':'+p.contentType+':'+(typeof p.content).substring(0,3);})));
+
+            if (!pendingAssets.length) {
+                console.warn('[WF Assets] pendingAssets is empty!');
+                showToast('ℹ️ 没有捕获到资产数据（pendingAssets 为空）', '');
+                return;
+            }
+
+            // Step 1: 去重：对于同一个 nodeId 只保留最后一次推入的数据（最新执行结果）
+            var seen = {}, assetNodes = [];
+            for (var pi = pendingAssets.length - 1; pi >= 0; pi--) {
+                var pa = pendingAssets[pi];
+                if (!seen[pa.nodeId]) {
+                    seen[pa.nodeId] = true;
+                    assetNodes.unshift({
+                        nodeId: pa.nodeId,
+                        type: pa.type,
+                        modelName: pa.modelName,
+                        category: pa.category,
+                        order: assetNodes.length + 1,
+                        contentType: pa.contentType || 'text',
+                        content: pa.content || ''
+                    });
+                }
+            }
+
+            console.log('[WF Assets] deduped nodes:', assetNodes.length, assetNodes.map(function(n){return n.nodeId+':'+n.contentType}));
+
+            // Step 2: 并发转换 blob → base64（仅对 blob URL）
+            var skipCount = 0;
+            await Promise.all(assetNodes.map(function(an) {
+                if (typeof an.content === 'string' && an.content.indexOf('blob:') === 0) {
+                    return fetch(an.content).then(function(r){ return r.blob(); })
+                        .then(function(b){ return blobToBase64(b); })
+                        .then(function(b64){ an.content = b64; })
+                        .catch(function(e){
+                            skipCount++;
+                            console.warn('[WF Assets] blob转换失败:', an.modelName, e.message);
+                            an.content = '[二进制内容]';
+                        });
+                }
+                return Promise.resolve();
+            }));
+
+            console.log('[WF Assets] after blob conversion, skipCount:', skipCount, 'final content types:', assetNodes.map(function(n){return n.contentType+':'+(n.content?n.content.substring(0,20):'empty')}));
+
+            // Step 3: 构建请求体
+            var now = new Date();
+            var pad2 = function(v) { return String(v).padStart(2, '0'); };
+            var ts = now.getFullYear() + pad2(now.getMonth() + 1) + pad2(now.getDate()) + '_'
+                + pad2(now.getHours()) + pad2(now.getMinutes()) + pad2(now.getSeconds());
+            var body = {
+                timestamp: ts,
+                formattedTime: now.toLocaleString('zh-CN'),
+                nodeCount: assetNodes.length,
+                duration: duration,
+                nodes: assetNodes,
+            };
+
+            console.log('[WF Assets] body built, posting to backend...');
+
+            // Step 4: POST 到后端
+            var saved = false;
+            try {
+                var r = await fetch('/api/workflower/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                saved = r.ok;
+                console.log('[WF Assets] backend response:', r.status, saved ? 'OK' : 'FAIL');
+                if (!saved) {
+                    var errText = await r.text().catch(function(){return '';});
+                    console.warn('[WF Assets] backend error body:', errText);
+                }
+            } catch (e) {
+                console.warn('[WF Assets] backend fetch error:', e.message);
+            }
+
+            // Step 5: 保存到本地 (降级)
+            if (!saved) {
+                saveAssetsToLocal(ts, body);
+                showToast('💾 ' + assetNodes.length + '个资产已保存(本地)' + (skipCount ? ',跳过' + skipCount : ''), 'success');
+                console.log('[WF Assets] saved to localStorage');
+            } else {
+                showToast('💾 ' + assetNodes.length + '个资产已保存' + (skipCount ? ',跳过' + skipCount : ''), 'success');
+                console.log('[WF Assets] saved to backend');
+            }
+
+            // Step 6: 刷新前端面板
+            console.log('[WF Assets] calling loadWorkflowAssets (await)...');
+            await loadWorkflowAssets();
+            console.log('[WF Assets] done');
+        } catch (err) {
+            console.error('[WF Assets] 保存失败:', err);
+            showToast('❌ 资产保存失败: ' + err.message, 'error');
+        }
+    }
+
+    async function loadWorkflowAssets() {
+        console.log('[WF Assets] loadWorkflowAssets called');
+        try {
+            var r = await fetch('/api/workflower/list');
+            console.log('[WF Assets] list fetch status:', r.status);
+            if (r.ok) {
+                var d = await r.json();
+                console.log('[WF Assets] list data count:', (d.assets || []).length);
+                assets = d.assets || [];
+                renderAssets();
+                console.log('[WF Assets] render from backend done');
+                return;
+            }
+            console.warn('[WF Assets] list fetch not ok:', r.status);
+        } catch (e) {
+            console.warn('[WF Assets] list fetch error:', e.message);
+        }
+        // 降级到 localStorage
+        console.log('[WF Assets] falling back to localStorage');
+        assets = loadAssetsFromLocal();
+        renderAssets();
+        console.log('[WF Assets] render from localStorage done');
+    }
+
+    function renderAssets() {
+        try {
+        console.log('[WF Assets] renderAssets called, assets count:', assets ? assets.length : 0);
+        var el = $('wfAssetsContainer');
+        if (!el) { console.warn('[WF Assets] wfAssetsContainer not found!'); return; }
+        if (!assets || !assets.length) {
+            el.innerHTML = '<div class="wf-no-models">运行工作流后自动保存资产</div>';
+            return;
+        }
+        var html = '';
+        for (var ai = 0; ai < Math.min(assets.length, 30); ai++) {
+            var a = assets[ai];
+            var nodes = a.nodes || [];
+            var outputCount = 0, monitorCount = 0;
+            nodes.forEach(function(n) { if (n.category === 'output') outputCount++; else monitorCount++; });
+
+            html += '<div class="wf-asset-item">'
+                + '<div class="wf-asset-header" data-ai="' + ai + '">'
+                + '<span class="wf-asset-time">' + escapeHtml(a.formattedTime || a.timestamp || '') + '</span>'
+                + '<span class="wf-asset-badge">' + a.nodeCount + '节点</span>'
+                + '<span class="wf-asset-dur">' + escapeHtml(a.duration || '') + '</span>'
+                + '</div>'
+                + '<div class="wf-asset-body" id="wfAssetBody_' + ai + '">';
+            for (var ni = 0; ni < nodes.length; ni++) {
+                var nd = nodes[ni];
+                var icon = nd.category === 'output' ? '🖥️' : '📊';
+                var label = nd.category === 'output' ? '最终输出 #' : '数据流转 #';
+                var preview = '';
+                if (nd.contentType === 'text' && nd.content) {
+                    var txt = nd.content;
+                    if (txt.length > 80) txt = txt.substring(0, 80) + '…';
+                    preview = '<div class="wf-asset-preview-text">' + escapeHtml(txt) + '</div>';
+                } else if (nd.contentType === 'image' && nd.content) {
+                    preview = '<img src="' + nd.content + '" class="wf-asset-preview-img" />';
+                } else if (nd.contentType === 'audio' && nd.content) {
+                    preview = '<audio controls src="' + nd.content + '" style="width:100%;height:28px;"></audio>';
+                } else if (nd.contentType === 'video' && nd.content) {
+                    preview = '<video controls src="' + nd.content + '" style="max-width:100%;max-height:80px;"></video>';
+                } else if (!nd.content && nd.contentType !== 'text') {
+                    preview = '<span style="color:#888;font-size:10px;">💾 保存到文件夹可查看文件</span>';
+                }
+                html += '<div class="wf-asset-node' + (nd.contentType !== 'text' ? ' wf-asset-node-clickable' : '') + '" data-ts="' + escapeHtml(a.timestamp) + '" data-node-id="' + escapeHtml(nd.nodeId || '') + '" data-ctype="' + nd.contentType + '">'
+                    + '<div class="wf-asset-node-info">' + icon + ' ' + label + nd.order
+                    + ' <span class="wf-asset-type-tag">' + nd.contentType + '</span></div>'
+                    + '<div class="wf-asset-node-summary">' + preview + '</div>'
+                    + '<div class="wf-asset-node-player" style="display:none;"></div>'
+                    + '</div>';
+            }
+            html += '</div>'
+                + '<div class="wf-asset-actions">'
+                + '<button class="wf-asset-save-btn" data-ts="' + escapeHtml(a.timestamp) + '">💾 保存到文件夹</button>'
+                + '</div>'
+                + '</div>';
+        }
+        if (assets.length > 30) {
+            html += '<div style="padding:6px 10px;color:#888;font-size:11px;">仅显示最近 30 条资产</div>';
+        }
+        el.innerHTML = html;
+
+        // 展开/折叠
+        el.querySelectorAll('.wf-asset-header').forEach(function(h) {
+            h.addEventListener('click', function() {
+                var body = document.getElementById('wfAssetBody_' + h.dataset.ai);
+                if (body) body.classList.toggle('open');
+                h.classList.toggle('open');
+            });
+        });
+        // 保存按钮
+        el.querySelectorAll('.wf-asset-save-btn').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                exportAssetFiles(btn.dataset.ts);
+            });
+        });
+        // 节点点击预览
+        el.querySelectorAll('.wf-asset-node-clickable').forEach(function(nodeEl) {
+            nodeEl.addEventListener('click', function(e) {
+                if (e.target.closest('.wf-asset-save-btn')) return;
+                var playerDiv = nodeEl.querySelector('.wf-asset-node-player');
+                if (!playerDiv) return;
+
+                // 已展开 → 收起
+                if (playerDiv.style.display === '') {
+                    playerDiv.style.display = 'none';
+                    return;
+                }
+
+                // 已加载过 → 直接展示
+                if (playerDiv._loaded) {
+                    playerDiv.style.display = '';
+                    return;
+                }
+
+                // 首次加载 → 从后端获取
+                var ts = nodeEl.dataset.ts, nid = nodeEl.dataset.nodeId, ct = nodeEl.dataset.ctype;
+                if (!ts || !nid) return;
+                playerDiv.innerHTML = '<span style="color:#888;font-size:10px;">⏳ 加载中...</span>';
+                playerDiv.style.display = '';
+                fetch('/api/workflower/' + ts).then(function(r) { return r.json(); }).then(function(data) {
+                    var nd = (data.nodes || []).find(function(n) { return n.nodeId === nid; });
+                    if (!nd || !nd.content) { playerDiv.innerHTML = '<span style="color:#f88;font-size:10px;">❌ 内容不可用</span>'; return; }
+                    var h = '';
+                    if (ct === 'audio') h = '<audio controls src="' + nd.content + '" style="width:100%;height:32px;"></audio>';
+                    else if (ct === 'image') h = '<img src="' + nd.content + '" style="max-width:100%;max-height:160px;border-radius:4px;display:block;" />';
+                    else if (ct === 'video') h = '<video controls src="' + nd.content + '" style="max-width:100%;max-height:120px;border-radius:4px;"></video>';
+                    else h = '<span style="color:#888;font-size:10px;">无法预览</span>';
+                    playerDiv.innerHTML = h;
+                    playerDiv._loaded = true;
+                }).catch(function() {
+                    playerDiv.innerHTML = '<span style="color:#f88;font-size:10px;">❌ 加载失败</span>';
+                });
+            });
+        });
+        // 默认展开第一个
+        var firstBody = document.getElementById('wfAssetBody_0');
+        if (firstBody) { firstBody.classList.add('open');
+            var firstH = el.querySelector('.wf-asset-header');
+            if (firstH) firstH.classList.add('open'); }
+        console.log('[WF Assets] renderAssets completed, html length:', html.length);
+        } catch (err) {
+            console.error('[WF Assets] renderAssets error:', err);
+        }
+    }
+
+    async function exportAssetFiles(assetTimestamp) {
+        if (!assetTimestamp) { showToast('资产时间戳缺失', 'error'); return; }
+        // 获取资产数据
+        var assetData = null;
+        try {
+            var r = await fetch('/api/workflower/' + assetTimestamp);
+            if (r.ok) assetData = await r.json();
+        } catch (_) {}
+        if (!assetData) {
+            // 尝试从 localStorage 获取
+            try {
+                var all = JSON.parse(localStorage.getItem(ASSETS_LOCAL_KEY) || '{}');
+                assetData = all[assetTimestamp] || null;
+            } catch (_) {}
+        }
+        if (!assetData || !assetData.nodes || !assetData.nodes.length) {
+            showToast('未找到资产数据', 'error');
+            return;
+        }
+
+        // 选择目标文件夹
+        var dirHandle = null;
+        try {
+            dirHandle = await window.showDirectoryPicker();
+        } catch (err) {
+            if (err.name === 'AbortError') return;
+            showToast('文件夹选择失败', 'error');
+            return;
+        }
+
+        var savedCount = 0;
+        for (var i = 0; i < assetData.nodes.length; i++) {
+            var nd = assetData.nodes[i];
+            if (!nd.content && nd.contentType === 'text') continue;
+            var extMap = { text: '.txt', image: '.png', audio: '.mp3', video: '.mp4' };
+            var ext = extMap[nd.contentType] || '.dat';
+            var prefix = nd.category === 'output' ? 'output' : 'monitor';
+            var fname = prefix + '_' + nd.order + ext;
+
+            try {
+                var fh = await dirHandle.getFileHandle(fname, { create: true });
+                var w = await fh.createWritable();
+                if (nd.contentType === 'text') {
+                    await w.write(nd.content || '');
+                } else if (nd.content && nd.content.indexOf('data:') === 0) {
+                    var resp2 = await fetch(nd.content);
+                    var blob2 = await resp2.blob();
+                    await w.write(blob2);
+                }
+                await w.close();
+                savedCount++;
+            } catch (err) {
+                showToast('保存 ' + fname + ' 失败: ' + err.message, 'error');
+            }
+        }
+        showToast('✅ 已保存 ' + savedCount + ' 个文件到 ' + dirHandle.name, 'success');
+    }
+
     function findLoopPairs() {
         var pairs = [];
         for (var ci = 0; ci < connections.length; ci++) {
@@ -974,6 +1579,8 @@ function renderWorkflowPage(container) {
         btn.onclick = function() { stopRequested = true;
             abortController?.abort();
             showToast('⏹ 正在停止...', ''); };
+        var startTime = Date.now();
+        pendingAssets = [];  // 清空上次运行残留
 
         var loopPairs = findLoopPairs();
         var loopBodySet = new Set();
@@ -1016,7 +1623,7 @@ function renderWorkflowPage(container) {
                     if (card) card.classList.add('executing');
                     try { var r = await executeNode(node, results, apiKey, abortController?.signal);
                         results[nid] = r; if (card) { card.classList.remove('executing');
-                            card.classList.add('executed'); } } catch (err) { if (stopRequested) break;
+                            card.classList.add('executed'); } } catch (err) { if (stopRequested || (err.message && err.message.indexOf('aborted') >= 0)) break;
                         hasError = true; if (card) { card.classList.remove('executing');
                             card.classList.add('error'); }
                         showToast('❌ ' + node.modelName + ': ' + err.message, 'error'); }
@@ -1063,7 +1670,7 @@ function renderWorkflowPage(container) {
                         if (bCard) bCard.classList.add('executing');
                         try { var br = await executeNode(bn, results, apiKey, abortController?.signal);
                             results[bid] = br; if (bCard) { bCard.classList.remove('executing');
-                                bCard.classList.add('executed'); } } catch (err) { if (stopRequested) break;
+                                bCard.classList.add('executed'); } } catch (err) { if (stopRequested || (err.message && err.message.indexOf('aborted') >= 0)) break;
                             hasError = true; if (bCard) { bCard.classList.remove('executing');
                                 bCard.classList.add('error'); }
                             showToast('❌ ' + bn.modelName + ' (迭代 ' + (iter + 1) + '): ' + err.message, 'error'); }
@@ -1088,7 +1695,7 @@ function renderWorkflowPage(container) {
             if (card) card.classList.add('executing');
             try { var r = await executeNode(node, results, apiKey, abortController?.signal);
                 results[nid] = r; if (card) { card.classList.remove('executing');
-                    card.classList.add('executed'); } } catch (err) { hasError = true; if (card) { card.classList.remove('executing');
+                    card.classList.add('executed'); } } catch (err) { if (err.name === 'AbortError' || (err.message && err.message.indexOf('aborted') >= 0)) { if (stopRequested) { showToast('⏹ 已停止', ''); break; } else { continue; } } hasError = true; if (card) { card.classList.remove('executing');
                     card.classList.add('error'); }
                 showToast('❌ ' + node.modelName + ': ' + err.message, 'error'); }
             if (node.type === 'output-display' || node.type === 'data-monitor') renderAll();
@@ -1101,47 +1708,80 @@ function renderWorkflowPage(container) {
         btn.className = 'wf-action-btn primary';
         btn.disabled = false;
         btn.onclick = runWorkflow;
-        if (!hasError) showToast('✅ 工作流执行完成！', 'success');
+        if (!hasError && !stopRequested) {
+            showToast('✅ 工作流执行完成！', 'success');
+            // 自动保存资产（异步，不影响主流程）
+            var dur = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
+            saveWorkflowAssets(dur);
+        }
         renderAll();
     }
 
-    // ── 侧边栏按钮绑定 ──
+    // ── 侧边栏按钮绑定（放置模式） ──
     container.querySelectorAll('.wf-media-btn').forEach(function(b) {
         b.addEventListener('click', function() {
-            if (b.id === 'wfAddMonitorBtn') { addMonitorNode(); return; }
-            if (b.id === 'wfAddExportBtn') { addExportNode(); return; }
-            addMediaNode(b.dataset.media);
+            if (b.id === 'wfAddMonitorBtn') { startPlacement('data-monitor', null); return; }
+            if (b.id === 'wfAddExportBtn') { startPlacement('data-export', null); return; }
+            startPlacement('media-' + b.dataset.media, null);
         });
     });
     container.querySelectorAll('.wf-output-btn').forEach(function(b) {
-        b.addEventListener('click', function() { addOutputNode(b.dataset.output); });
+        b.addEventListener('click', function() { startPlacement('output-' + b.dataset.output, null); });
     });
-    $('wfAddLoopStartBtn').addEventListener('click', addLoopStartNode);
-    $('wfAddLoopEndBtn').addEventListener('click', addLoopEndNode);
+    $('wfAddLoopStartBtn').addEventListener('click', function() { startPlacement('loop-start', null); });
+    $('wfAddLoopEndBtn').addEventListener('click', function() { startPlacement('loop-end', null); });
 
     // ── API Key & 模型加载 ──
     apiKeyInput.value = apiKey;
+    apiKeyInput.placeholder = '输入 ' + curProv().name + ' API Key ...';
     apiKeyInput.addEventListener('input', function() { apiKey = apiKeyInput.value.trim();
-        localStorage.setItem('sf_api_key', apiKey); });
+        localStorage.setItem(curProv().api_key_storage, apiKey); });
+
+    // ── 提供商切换 ──
+    $('wfProviderSelect').value = selectedProvider;
+    $('wfProviderSelect').addEventListener('change', function() {
+        // 保存当前 key
+        localStorage.setItem(curProv().api_key_storage, apiKey);
+        selectedProvider = this.value;
+        localStorage.setItem('wf_selected_provider', selectedProvider);
+        // 更新 UI
+        apiKey = localStorage.getItem(curProv().api_key_storage) || '';
+        apiKeyInput.value = apiKey;
+        apiKeyInput.placeholder = '输入 ' + curProv().name + ' API Key ...';
+        // 切换后清除并尝试加载缓存
+        fetchedModels = [];
+        var cached = loadCachedModels();
+        if (cached && cached.length) {
+            fetchedModels = cached;
+            apiStatus.textContent = '📦 从缓存加载了 ' + cached.length + ' 个模型 (' + curProv().name + ')';
+            apiStatus.className = 'wf-api-status success';
+        } else {
+            apiStatus.textContent = '已切换到 ' + curProv().name + '，输入 API Key 后加载模型';
+            apiStatus.className = 'wf-api-status';
+        }
+        renderSidebarModels();
+    });
 
     async function loadModels() {
         var key = apiKeyInput.value.trim();
         if (!key) { apiStatus.textContent = '⚠️ 请先输入 API Key';
             apiStatus.className = 'wf-api-status error'; return; }
         apiKey = key;
-        localStorage.setItem('sf_api_key', key);
+        localStorage.setItem(curProv().api_key_storage, key);
         var cached = loadCachedModels();
         if (cached && cached.length) { fetchedModels = cached;
             renderSidebarModels();
+            collapseModelPlaza();
             apiStatus.textContent = '📦 从缓存加载了 ' + cached.length + ' 个模型';
             apiStatus.className = 'wf-api-status success'; }
         loadModelsBtn.disabled = true;
-        apiStatus.textContent = '⏳ 正在从 SiliconFlow 获取模型列表...';
+        apiStatus.textContent = '⏳ 正在从 ' + curProv().name + ' 获取模型列表...';
         apiStatus.className = 'wf-api-status loading';
         try {
             var fresh = await fetchModelsFromAPI(key);
             if (fresh && fresh.length) { fetchedModels = fresh;
                 renderSidebarModels();
+                collapseModelPlaza();
                 apiStatus.textContent = '✅ 成功加载 ' + fresh.length + ' 个模型 (' + new Date().toLocaleTimeString() + ')';
                 apiStatus.className = 'wf-api-status success';
                 showToast('已加载 ' + fresh.length + ' 个模型', 'success'); } else if (!cached || !cached.length) { apiStatus.textContent = '⚠️ API 返回为空';
@@ -1155,8 +1795,8 @@ function renderWorkflowPage(container) {
     }
     loadModelsBtn.addEventListener('click', loadModels);
     clearCacheBtn.addEventListener('click', function() {
-        localStorage.removeItem(CACHE_KEY);
-        localStorage.removeItem(CACHE_TIME_KEY);
+        localStorage.removeItem(curProv().model_cache);
+        localStorage.removeItem(curProv().cache_time);
         fetchedModels = [];
         renderSidebarModels();
         apiStatus.textContent = '已清除模型缓存';
@@ -1166,6 +1806,15 @@ function renderWorkflowPage(container) {
 
     // ── 工作流管理 ──
     function serializeWorkflow() { saveCurrentWs(); return JSON.stringify({ version: '1.0', workspaces: workspaces }, null, 2); }
+
+    function clearStaleBlobUrls() {
+        nodes.forEach(function(n) {
+            if (n.savedContent && typeof n.savedContent === 'string' && n.savedContent.indexOf('blob:') === 0) {
+                n.savedContent = null;
+                n.savedContentType = null;
+            }
+        });
+    }
 
     function deserializeWorkflow(json) {
         try {
@@ -1187,6 +1836,7 @@ function renderWorkflowPage(container) {
                 connections = workspaces[0].connections;
                 nodeIdCounter = workspaces[0].nodeIdCounter;
             } else throw new Error('无效的工作流文件');
+            clearStaleBlobUrls();
             applyCanvasTransform();
             renderAll();
             renderTabBar();
@@ -1214,12 +1864,113 @@ function renderWorkflowPage(container) {
         }
     });
 
+    // ── 侧边栏模块折叠 ──
+    var _sectionCollapsed = {};
+
+    function initSidebarCollapse() {
+        var mainView = $('wfSidebarMainView');
+        if (!mainView) return;
+
+        var cats = mainView.querySelectorAll('.wf-category');
+        cats.forEach(function(cat) {
+            // 为该分类添加 ▶/▼ 指示器
+            var text = cat.textContent.replace(/▶|▼/g, '').trim();
+            var key = text.replace(/[^a-zA-Z0-9一-鿿]/g, '');
+            if (cat.id === 'wfModelPlazaTitle') key = 'modelPlaza';
+            cat.setAttribute('data-section-key', key);
+            cat.style.cursor = 'pointer';
+            cat.style.userSelect = 'none';
+
+            // 收集该分类之后、下一个分类之前的所有兄弟元素
+            var contentEls = [];
+            var next = cat.nextElementSibling;
+            while (next && !next.classList.contains('wf-category')) {
+                contentEls.push(next);
+                next = next.nextElementSibling;
+            }
+            if (!contentEls.length) return;
+
+            // 包裹到 content div 中
+            var wrapper = document.createElement('div');
+            wrapper.className = 'wf-section-content';
+            contentEls.forEach(function(el) { wrapper.appendChild(el); });
+            cat.parentNode.insertBefore(wrapper, cat.nextSibling);
+
+            // 初始化状态：默认展开，模型广场默认折叠
+            if (_sectionCollapsed[key] === undefined) {
+                _sectionCollapsed[key] = (key === 'modelPlaza' || key.indexOf('工作流管理') >= 0);
+            }
+            updateSectionState(cat, key, wrapper);
+
+            cat.addEventListener('click', function(e) {
+                if (e.target.closest('input,select,button,.wf-model-btn,.wf-cat-toggle')) return;
+                _sectionCollapsed[key] = !_sectionCollapsed[key];
+                updateSectionState(cat, key, wrapper);
+            });
+        });
+    }
+
+    function updateSectionState(cat, key, wrapper) {
+        var collapsed = _sectionCollapsed[key];
+        // 更新指示器
+        var txt = cat.textContent.replace(/▶|▼/g, '').trim();
+        cat.textContent = (collapsed ? '▶' : '▼') + ' ' + txt;
+        wrapper.style.display = collapsed ? 'none' : '';
+        // 同步更新 collapsedCats（保持已有的模型广场折叠逻辑兼容）
+        if (key === 'modelPlaza') {
+            // 模型广场内部的分类（图片、对话等）也初始化
+        }
+    }
+
+    // 在模型加载后强制折叠模型广场
+    function collapseModelPlaza() {
+        _sectionCollapsed['modelPlaza'] = true;
+        var cat = document.querySelector('#wfSidebarMainView .wf-category[data-section-key="modelPlaza"]');
+        if (cat) {
+            var wrapper = cat.nextElementSibling;
+            if (wrapper && wrapper.classList.contains('wf-section-content')) {
+                updateSectionState(cat, 'modelPlaza', wrapper);
+            }
+        }
+    }
+
     var autoSaveToggle = $('wfAutoSaveToggle');
     autoSaveToggle.addEventListener('click', function() {
         autoSaveEnabled = !autoSaveEnabled;
         autoSaveToggle.textContent = autoSaveEnabled ? '⏸ 自动保存: 开' : '▶️ 自动保存: 关';
         showToast(autoSaveEnabled ? '自动保存已开启' : '自动保存已关闭', '');
     });
+    // ── 侧边栏视图切换（主视图 / 资产视图） ──
+    var assetsBtn = $('wfAssetsBtn');
+    var assetsBackBtn = $('wfAssetsBackBtn');
+    var sidebarMainView = $('wfSidebarMainView');
+    var sidebarAssetsView = $('wfSidebarAssetsView');
+
+    function showSidebarView(view) {
+        if (!sidebarMainView || !sidebarAssetsView) return;
+        if (view === 'assets') {
+            sidebarMainView.style.display = 'none';
+            sidebarAssetsView.style.display = '';
+        } else {
+            sidebarMainView.style.display = '';
+            sidebarAssetsView.style.display = 'none';
+        }
+    }
+
+    if (assetsBtn) {
+        assetsBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            showSidebarView('assets');
+            loadWorkflowAssets();  // 进入时刷新
+        });
+    }
+    if (assetsBackBtn) {
+        assetsBackBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            showSidebarView('main');
+        });
+    }
+
     var autoSaveTimer = null;
 
     function scheduleAutoSave() {
@@ -1243,38 +1994,85 @@ function renderWorkflowPage(container) {
             renderAll(); }
     });
     $('wfFitViewBtn').addEventListener('click', fitView);
-    $('wfRunWorkflowBtn').addEventListener('click', runWorkflow);
+    // 使用 onclick 而非 addEventListener，避免与 runWorkflow 内部的 onclick 管理冲突导致双重触发
+    $('wfRunWorkflowBtn').onclick = runWorkflow;
 
     // ── 画布交互 ──
     canvasContainer.addEventListener('click', function(e) {
+        // 如果刚完成拖拽平移，忽略此次 click
+        if (panState.moved) { panState.moved = false; return; }
+        // 节点放置模式：单击画布任意位置放置
+        if (placeState) {
+            if (e.target.closest('.wf-sidebar, .wf-floating-actions, .wf-tab-bar, .wf-action-btn')) return;
+            var r = canvasContainer.getBoundingClientRect();
+            placeNodeAt((e.clientX - r.left - canvasPan.x) / canvasZoom, (e.clientY - r.top - canvasPan.y) / canvasZoom);
+            return;
+        }
         if (e.target.classList.contains('wf-conn-line') && e.target.dataset.connIdx !== undefined) {
             var idx = parseInt(e.target.dataset.connIdx);
             if (!isNaN(idx) && idx >= 0 && idx < connections.length) { connections.splice(idx, 1);
                 renderAll();
                 scheduleAutoSave(); return; }
         }
-        if (e.target === canvasContainer || e.target.id === 'wfNodesLayer' || e.target.id === 'wfLineLayer' || e.target === canvasViewport) { selectedNodeId = null;
-            renderAll(); }
+        if (e.target === canvasContainer || e.target.id === 'wfNodesLayer' || e.target.id === 'wfLineLayer' || e.target === canvasViewport) {
+            selectedNodeId = null;
+            container.querySelectorAll('.wf-node-card.selected').forEach(function(c) {
+                c.classList.remove('selected');
+            });
+        }
     });
     canvasContainer.addEventListener('wheel', function(e) {
         e.preventDefault();
         var r = canvasContainer.getBoundingClientRect();
         zoomCanvas(e.deltaY > 0 ? 0.9 : 1.1, e.clientX, e.clientY);
     }, { passive: false });
-    var midPan = { active: false, sx: 0, sy: 0, px: 0, py: 0 };
+    var panState = { active: false, sx: 0, sy: 0, px: 0, py: 0, moved: false, byButton: -1 };
+    var PAN_THRESHOLD = 4; // 像素移动阈值
+
+    function startPan(e, btn) {
+        // 仅在画布空白区域（不在节点、端口、连线上）
+        if (e.target.closest('.wf-node-card, .wf-port, .wf-conn-line, .wf-floating-actions, .wf-tab-bar')) return;
+        panState = { active: true, sx: e.clientX, sy: e.clientY, px: canvasPan.x, py: canvasPan.y, moved: false, byButton: btn };
+        e.preventDefault();
+    }
+
+    function updatePan(e) {
+        if (!panState.active) return;
+        var dx = e.clientX - panState.sx;
+        var dy = e.clientY - panState.sy;
+        if (!panState.moved && (dx * dx + dy * dy) > PAN_THRESHOLD * PAN_THRESHOLD) {
+            panState.moved = true;
+            canvasContainer.style.cursor = 'grabbing';
+        }
+        if (panState.moved) {
+            canvasPan.x = panState.px + dx;
+            canvasPan.y = panState.py + dy;
+            applyCanvasTransform();
+        }
+    }
+
+    function endPan(e) {
+        if (panState.active && panState.byButton === e.button) {
+            panState.active = false;
+            canvasContainer.style.cursor = '';
+        }
+    }
+
     canvasContainer.addEventListener('mousedown', function(e) {
-        if (e.button === 1) { e.preventDefault();
-            midPan = { active: true, sx: e.clientX, sy: e.clientY, px: canvasPan.x, py: canvasPan.y };
-            canvasContainer.style.cursor = 'grabbing'; }
+        if (e.button === 0) startPan(e, 0);   // 左键
+        if (e.button === 1) { startPan(e, 1); return; } // 中键（阻止默认滚动）
     });
-    window.addEventListener('mousemove', function(e) {
-        if (midPan.active) { canvasPan.x = midPan.px + (e.clientX - midPan.sx);
-            canvasPan.y = midPan.py + (e.clientY - midPan.sy);
-            applyCanvasTransform(); }
-    });
-    window.addEventListener('mouseup', function(e) {
-        if (e.button === 1 && midPan.active) { midPan.active = false;
-            canvasContainer.style.cursor = 'grab'; }
+    window.addEventListener('mousemove', updatePan);
+    window.addEventListener('mouseup', endPan);
+
+    // 幽灵节点跟随鼠标
+    canvasContainer.addEventListener('mousemove', function(e) {
+        if (!placeState || !placeState.ghostEl) return;
+        var r = canvasContainer.getBoundingClientRect();
+        var x = (e.clientX - r.left - canvasPan.x) / canvasZoom;
+        var y = (e.clientY - r.top - canvasPan.y) / canvasZoom;
+        placeState.ghostEl.style.left = Math.round(x) + 'px';
+        placeState.ghostEl.style.top = Math.round(y) + 'px';
     });
 
     // ── 快捷键 ──
@@ -1287,8 +2085,13 @@ function renderWorkflowPage(container) {
         if ((e.ctrlKey || e.metaKey) && e.key === 'd') { e.preventDefault(); if (selectedNodeId) duplicateNode(selectedNodeId); }
         if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault();
             $('wfSaveWfBtn').click(); }
-        if (e.key === 'Escape') { selectedNodeId = null;
-            renderAll(); }
+        if (e.key === 'Escape') {
+            if (placeState) { cancelPlacement(); showToast('已取消放置', ''); return; }
+            selectedNodeId = null;
+            container.querySelectorAll('.wf-node-card.selected').forEach(function(c) {
+                c.classList.remove('selected');
+            });
+        }
     };
     document.addEventListener('keydown', _keyHandler);
 
@@ -1298,10 +2101,13 @@ function renderWorkflowPage(container) {
     var cached = loadCachedModels();
     if (cached && cached.length) { fetchedModels = cached;
         renderSidebarModels();
+        collapseModelPlaza();
         apiStatus.textContent = '📦 已加载 ' + cached.length + ' 个模型 (缓存)';
         apiStatus.className = 'wf-api-status success'; } else renderSidebarModels();
 
     tryAutoRestore();
+    initSidebarCollapse();
+    loadWorkflowAssets();
     if (!workspaces[0].nodes.length) {
         var t = createNode('media-text', null, 50, 40);
         if (t) { t.textContent = '';

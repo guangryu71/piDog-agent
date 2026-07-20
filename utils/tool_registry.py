@@ -251,6 +251,31 @@ SKILL_REGISTRY: Dict[str, Dict] = {
         }
     },
 
+    # ── 文件操作 ──
+    "file_controler": {
+        "tools": {
+            "delete_file": {
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": "delete_file",
+                        "description": "删除文件或空目录。默认只删除文件，删除目录需设置 recursive=true。此操作需要用户审批确认。",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "path":  {"type": "string", "description": "要删除的文件或目录的路径"},
+                                "recursive": {"type": "boolean", "description": "是否递归删除目录（类似 rm -rf），默认 false", "default": False},
+                            },
+                            "required": ["path"]
+                        }
+                    }
+                },
+                "module": "utils.file_controler.tools.file_operations",
+                "function": "delete_file",
+            },
+        }
+    },
+
     # ── 图片处理 ──
     "skill_img_handler": {
         "tools": {
@@ -259,7 +284,7 @@ SKILL_REGISTRY: Dict[str, Dict] = {
                     "type": "function",
                     "function": {
                         "name": "process_image",
-                        "description": "处理图片：recognize(识别), generate(文生图), img2img(图生图), edit(编辑), ocr(文字提取), convert(格式转换), resize(调整尺寸), remove_bg(去背景), enhance(增强), analyze(质量分析)。指定 operation 和相应参数执行对应操作。",
+                        "description": "处理图片。operation=recognize: 识别图片内容（用户问图片有什么时用此操作即可，不需要额外做其他操作）。其他操作只用于独立需求操作：generate(文生图), img2img(图生图), edit(编辑), ocr(文字提取), convert(格式转换), resize(调整尺寸), remove_bg(去背景), enhance(增强), analyze(质量分析)。",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -278,7 +303,7 @@ SKILL_REGISTRY: Dict[str, Dict] = {
                         }
                     }
                 },
-                "module": "utils.img_handler.image_handler",
+                "module": "skills.skill_img_handler.tools.image_handler",
                 "function": "process",
             },
         }

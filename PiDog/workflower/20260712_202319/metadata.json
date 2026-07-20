@@ -1,0 +1,28 @@
+{
+  "timestamp": "20260712_202319",
+  "formattedTime": "2026/7/12 20:23:19",
+  "nodeCount": 2,
+  "duration": "0.4s",
+  "nodes": [
+    {
+      "nodeId": "node_90",
+      "type": "data-monitor",
+      "modelName": "📊 数据传输展示",
+      "category": "monitor",
+      "order": 2,
+      "contentType": "audio",
+      "content": "",
+      "fileName": "node_90.mp3"
+    },
+    {
+      "nodeId": "node_91",
+      "type": "output-display",
+      "modelName": "📺 内容展示",
+      "category": "output",
+      "order": 1,
+      "contentType": "audio",
+      "content": "",
+      "fileName": "node_91.mp3"
+    }
+  ]
+}

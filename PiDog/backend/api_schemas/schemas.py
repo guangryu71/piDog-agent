@@ -12,7 +12,8 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="用户消息")
     session_id: Optional[str] = Field(None, description="会话ID，不传则新建")
     stream: bool = Field(False, description="是否流式返回")
-    file_id: Optional[str] = Field(None, description="上传文件的ID（通过 /api/chat/upload 获得）")
+    file_id: Optional[str] = Field(None, description="上传文件的ID（通过 /api/chat/upload 获得），兼容单文件")
+    file_ids: Optional[List[str]] = Field(None, description="多个上传文件 ID 列表，同时上传图片和文件时使用")
 
 
 class ChatResponse(BaseModel):
@@ -41,40 +42,14 @@ class ProviderInfo(BaseModel):
 class ModelStatus(BaseModel):
     current_provider: str
     current_model: str
+    capabilities: dict = Field(default_factory=dict)
+    has_global_key: bool = False
+    has_ocr_key: bool = False
     providers: List[ProviderInfo]
 
 
-# ==================== 图片模型 ====================
-
-class ImageGenProviderInfo(BaseModel):
-    key: str
-    name: str
-    base_url: str
-    models: List[str]
-    default_model: str
-    has_key: bool
-
-
-class ImageUndProviderInfo(BaseModel):
-    key: str
-    name: str
-    base_url: str
-    models: List[str]
-    default_model: str
-    has_key: bool
-
-
-class ImageModelStatus(BaseModel):
-    current_provider: str
-    current_model: str
-    providers: List[ImageGenProviderInfo]
-
-
-class ImageModelSwitchRequest(BaseModel):
-    category: str = Field(..., description="图片模型类别: img_gen=生成, img_und=理解")
-    provider: str = Field(..., description="提供商 key")
-    model: Optional[str] = Field(None, description="模型名称")
-    api_key: Optional[str] = Field(None, description="自定义 API Key")
+class OcrApiKeyRequest(BaseModel):
+    api_key: str = Field(..., description="DeepSeek-OCR API Key")
 
 
 # ==================== 工具 ====================

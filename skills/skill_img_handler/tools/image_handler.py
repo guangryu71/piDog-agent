@@ -174,24 +174,136 @@ def recognize_image(image_path: str, prompt: str = "描述这张图片的内容"
     if not path.exists():
         return {"status": "error", "error": f"图片文件不存在: {image_path}"}
 
-    key = api_key or _load_config().get("qwen_vl_api_key") or os.getenv("DASHSCOPE_API_KEY")
+    # ── 优先使用主模型（AppState）的 API Key ──
+    _appstate_key = None
+    _appstate_base = None
+    _appstate_model = None
+    _appstate_provider = None
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "PiDog" / "backend"))
+        from config import AppState, PROVIDERS
+        _appstate_key = AppState.get_api_key()
+        _appstate_base = AppState.get_base_url()
+        _appstate_model = AppState.get_effective_model()
+        _appstate_provider = AppState.current_provider
+    except Exception:
+        pass
+
+    # API Key 优先级：参数 > 主模型 Key > skill.yaml > 环境变量
+    key = api_key or _appstate_key or _load_config().get("qwen_vl_api_key") or os.getenv("DASHSCOPE_API_KEY") or os.getenv("SILICONFLOW_API_KEY")
     if not key:
-        return {"status": "error", "error": "未配置 DASHSCOPE_API_KEY"}
+        return {"status": "error", "error": "未配置 API Key"}
 
     try:
-        # TODO: 调用通义千问VL API
-        # import dashscope
-        # response = dashscope.MultiModalConversation.call(
-        #     model="qwen-vl-max",
-        #     messages=[{"role": "user", "content": [
-        #         {"image": str(path.absolute())},
-        #         {"text": prompt},
-        #     ]}],
-        # )
-        # description = response.output.choices[0].message.content
+        import requests
+        import base64
 
-        description = f"[模拟] 这是一张示例图片，内容为：{prompt}"
-        return {"status": "success", "description": description, "model": "qwen-vl-max", "detail_level": detail_level}
+        # 判断主模型是否支持多模态 → 直接用主模型识别
+        def _has_vision(m):
+            return any(kw in (m or '').lower() for kw in ["vl", "vision", "gpt-4o", "claude-3", "gemini", "qvq", "internvl", "llava", "deepseek-vl", "phi-3-vision", "glm-4v", "minicpmv", "cogvlm"])
+
+        if _has_vision(_appstate_model) and _appstate_key:
+            vl_key = _appstate_key
+            vl_model = _appstate_model
+            vl_base = _appstate_base
+        else:
+            vl_key = key
+            vl_model = "qwen-vl-max"
+            vl_base = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+        # 读取图片并 base64 编码
+        with open(path, "rb") as f:
+            img_data = f.read()
+        img_b64 = base64.b64encode(img_data).decode("utf-8")
+
+        # 推断 MIME 类型
+        ext = path.suffix.lower()
+        mime_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+                    ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp"}
+        mime = mime_map.get(ext, "image/png")
+
+        # 构建请求体
+        body = {
+            "model": vl_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{img_b64}"}},
+                        {"type": "text", "text": prompt}
+                    ]
+                }
+            ],
+            "max_tokens": 2048
+        }
+
+        resp = requests.post(
+            f"{vl_base}/chat/completions",
+            headers={"Authorization": f"Bearer {vl_key}", "Content-Type": "application/json"},
+            json=body,
+            timeout=60
+        )
+
+        if resp.status_code != 200:
+            err_msg = resp.text[:200]
+            # 尝试硅基流动备用（优先用主模型 Key）
+            try:
+                sf_key = _appstate_key if (_appstate_provider and 'siliconflow' in _appstate_provider) else (os.getenv("SILICONFLOW_API_KEY") or _load_config().get("siliconflow_api_key", ""))
+                if not sf_key:
+                    sf_key = os.getenv("SILICONFLOW_API_KEY") or _load_config().get("siliconflow_api_key", "")
+                if sf_key:
+                    _log(f"DashScope VL 失败 ({resp.status_code})，尝试硅基流动...", "WARN")
+                    sf_body = dict(body)
+                    sf_body["model"] = "Qwen/Qwen2.5-VL-72B-Instruct"
+                    resp = requests.post(
+                        "https://api.siliconflow.cn/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {sf_key}", "Content-Type": "application/json"},
+                        json=sf_body,
+                        timeout=60
+                    )
+                    if resp.status_code == 200:
+                        pass
+                    else:
+                        # 最后尝试 DeepSeek V4-Pro 多模态格式
+                        ds_key = _appstate_key if (_appstate_provider and 'deepseek' in _appstate_provider) else (os.getenv("DEEPSEEK_API_KEY") or _load_config().get("deepseek_api_key", ""))
+                        if not ds_key:
+                            ds_key = os.getenv("DEEPSEEK_API_KEY") or _load_config().get("deepseek_api_key", "")
+                        if ds_key:
+                            _log(f"硅基流动失败，尝试 DeepSeek V4-Pro...", "WARN")
+                            ocr_body = {
+                                "model": "deepseek-v4-pro",
+                                "messages": [{
+                                    "role": "user",
+                                    "content": prompt,
+                                    "image_data": img_b64,  # 纯 base64，无 data URI 前缀
+                                }],
+                                "max_tokens": 2048,
+                            }
+                            ds_base = _appstate_base or "https://api.deepseek.com/v1"
+                            resp = requests.post(
+                                f"{ds_base.rstrip('/')}/chat/completions",
+                                headers={"Authorization": f"Bearer {ds_key}", "Content-Type": "application/json"},
+                                json=ocr_body,
+                                timeout=60
+                            )
+                            if resp.status_code != 200:
+                                return {"status": "error", "error": f"所有识别都失败, 最后: {resp.text[:300]}"}
+                        else:
+                            return {"status": "error", "error": f"DashScope VL 失败: {err_msg}"}
+                else:
+                    return {"status": "error", "error": f"DashScope VL 失败: {err_msg}"}
+            except Exception as sf_err:
+                return {"status": "error", "error": f"所有备用识别都失败: {sf_err}"}
+
+        data = resp.json()
+        description = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if not description:
+            description = "(模型未返回描述内容)"
+
+        return {"status": "success", "description": description,
+                "model": data.get("model", vl_model), "detail_level": detail_level}
+
     except Exception as e:
         return {"status": "error", "error": f"识别失败: {e}"}
 
@@ -576,30 +688,95 @@ def batch_process(image_paths: List[str], operation: str = "convert",
 def extract_text_ocr(image_path: str, language: str = "zh-cn",
                      api_key: Optional[str] = None) -> Dict[str, Any]:
     """
-    使用OCR技术从图片中提取文字
+    使用 DeepSeek-OCR 模型从图片中提取文字
 
     Args:
         image_path: 图片文件路径
-        language: 语言代码 (zh-cn, en, ja, ko)
-        api_key: API密钥
+        language: 语言代码 (zh-cn, en, ja, ko) — 用于提示词
+        api_key: 备用 API Key（通常由 process() 传入 AppState.ocr_api_key）
 
     Returns:
-        {"status", "text", "confidence", "blocks", "language", "message", "error"}
+        {"status", "text", "confidence", "language", "message", "error"}
     """
     path = Path(image_path)
     if not path.exists():
         return {"status": "error", "error": f"图片不存在: {image_path}"}
 
+    # ── 获取 DeepSeek-OCR 专用 Key（优先级：参数 > AppState.ocr_api_key > SiliconFlow 配置 Key > AppState.get_api_key） ──
+    _ocr_key = api_key
     try:
-        # TODO: 实际调用OCR服务
-        # 方案1: 阿里云OCR - dashscope.OCR.call(...)
-        # 方案2: PaddleOCR - from paddleocr import PaddleOCR
+        if not _ocr_key:
+            import sys as _sys
+            _sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "PiDog" / "backend"))
+            from config import AppState, PROVIDERS
+            # 优先 OCR 专用 Key，其次是 SiliconFlow 的 Key，最后是主模型 Key
+            _ocr_key = AppState.ocr_api_key
+            if not _ocr_key:
+                _ocr_key = PROVIDERS.get("siliconflow", {}).get("api_key", "")
+            if not _ocr_key:
+                _ocr_key = AppState.get_api_key()
+    except Exception:
+        pass
 
-        return {"status": "success", "text": "[模拟] 这是从图片中提取的文字内容",
-                "confidence": 0.95, "language": language,
-                "blocks": [{"text": "[模拟] 这是从图片中提取的文字内容",
-                            "box": [[0, 0], [100, 0], [100, 50], [0, 50]], "confidence": 0.95}],
+    if not _ocr_key:
+        return {"status": "error", "error": "未配置 OCR API Key（请在 Model 页面设置 OCR 专用 Key，或在配置文件中设置硅基流动 API Key）"}
+
+    try:
+        import requests
+        import base64
+
+        ocr_prompt_map = {
+            "zh-cn": "请完整提取图片中的所有文字内容（包括中文、英文、数字、标点），保留原文格式和换行。只输出文字，不要添加任何解释或描述。",
+            "en": "Extract all text content from the image (including English, numbers, punctuation). Preserve original formatting and line breaks. Output only the text, no explanation.",
+            "ja": "画像内のすべての文字を抽出してください。元の書式と改行を保持し、説明は不要です。",
+            "ko": "이미지에서 모든 텍스트를 추출하세요. 원본 형식과 줄바꿈을 유지하고 설명은 출력하지 마세요.",
+        }
+        prompt_text = ocr_prompt_map.get(language, ocr_prompt_map["zh-cn"])
+
+        with open(path, "rb") as f:
+            img_data = f.read()
+        img_b64 = base64.b64encode(img_data).decode("utf-8")
+
+        ext = path.suffix.lower()
+        mime_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+                    ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp"}
+        mime = mime_map.get(ext, "image/png")
+
+        # ── 使用硅基流动 SiliconFlow 的 DeepSeek-OCR 模型（OpenAI 兼容格式） ──
+        _sf_base_url = "https://api.siliconflow.cn/v1"
+        body = {
+            "model": "deepseek-ai/DeepSeek-OCR",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{img_b64}"}},
+                        {"type": "text", "text": prompt_text},
+                    ],
+                }
+            ],
+            "max_tokens": 4096,
+        }
+
+        resp = requests.post(
+            f"{_sf_base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {_ocr_key}", "Content-Type": "application/json"},
+            json=body,
+            timeout=120,
+        )
+
+        if resp.status_code != 200:
+            return {"status": "error", "error": f"OCR 识别失败 (HTTP {resp.status_code}): {resp.text[:300]}"}
+
+        data = resp.json()
+        text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if not text:
+            text = "(模型未返回文字内容)"
+
+        return {"status": "success", "text": text,
+                "confidence": 0.9, "language": language,
                 "message": f"成功提取文字 ({language})"}
+
     except Exception as e:
         return {"status": "error", "error": f"OCR提取失败: {e}"}
 
@@ -739,7 +916,16 @@ def process(operation: str, **kwargs) -> Dict[str, Any]:
         return result
 
     # ------ 需要 API 调用的操作 ------
-    api_key = kwargs.get("api_key") or _load_config().get("qwen_vl_api_key") or os.getenv("DASHSCOPE_API_KEY")
+    # 先用主模型 Key（AppState），再 fallback
+    _appstate_key_2 = None
+    try:
+        import sys as _sys2
+        _sys2.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "PiDog" / "backend"))
+        from config import AppState as _as2
+        _appstate_key_2 = _as2.get_api_key()
+    except Exception:
+        pass
+    api_key = kwargs.get("api_key") or _appstate_key_2 or _load_config().get("qwen_vl_api_key") or os.getenv("DASHSCOPE_API_KEY") or os.getenv("SILICONFLOW_API_KEY")
     if not api_key:
         return {"status": "error", "operation": operation, "error": "未配置 API 密钥"}
 
@@ -796,15 +982,26 @@ def process(operation: str, **kwargs) -> Dict[str, Any]:
         result["model"] = "qwen-vl-max"
         return result
 
-    # ---- OCR - 统一走 qwen-vl 多模态 ----
+    # ---- OCR - 硬编码 DeepSeek-OCR，使用专用 Key ----
     if operation == "ocr":
+        # ⚠️ 不能直接用 api_key（它已被解析为主模型的 DeepSeek Key，传给硅基流动会 401）
+        # 必须重新解析 OCR 专用 Key
+        _ocr_api_key = None
+        try:
+            import sys as _sys2
+            _sys2.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "PiDog" / "backend"))
+            from config import AppState as _as3, PROVIDERS as _ps
+            # 优先级: OCR 专用 Key > 硅基流动 Key > 主模型 Key（兜底）
+            _ocr_api_key = _as3.ocr_api_key or _ps.get("siliconflow", {}).get("api_key", "") or _as3.get_api_key()
+        except Exception:
+            _ocr_api_key = api_key  # 异常时用主模型 Key 兜底
         result = extract_text_ocr(
             kwargs.get("image_path", ""),
             language=kwargs.get("language", "zh-cn"),
-            api_key=api_key,
+            api_key=_ocr_api_key,
         )
         result["operation"] = operation
-        result["model"] = "qwen-vl-max"
+        result["model"] = result.get("model", "deepseek-ai/DeepSeek-OCR")
         return result
 
     # ---- 移除背景 ----
