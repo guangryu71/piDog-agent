@@ -64,6 +64,9 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 
 /* ---- Tables ---- */
 .table-wrap { overflow-x: auto; }
+
+/* 模态框内表格滚动（会话历史等） */
+.modal .table-wrap { max-height: calc(80vh - 100px); overflow-y: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
 th { color: var(--text-dim); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -442,3 +445,43 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .workflow-page .wf-category:active { opacity:.8; }
 /* ── 幽灵节点（放置模式） ── */
 .workflow-page .wf-node-ghost { border:2px dashed #7b9cff !important; background:#1a1a2e !important; border-radius:10px; box-shadow:0 4px 24px rgba(123,156,255,0.3); transform:scale(.95); transition:none; }
+
+/* ============================================================
+   自定义任务（task.js）
+   ============================================================ */
+.task-field { margin-bottom:12px; }
+.task-field label { display:block; font-size:13px; font-weight:600; margin-bottom:4px; color:var(--text); }
+.task-input { width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); font-size:14px; box-sizing:border-box; }
+.task-input:focus { outline:none; border-color:var(--accent); }
+.task-textarea { width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); font-size:14px; resize:vertical; font-family:inherit; box-sizing:border-box; }
+.task-textarea:focus { outline:none; border-color:var(--accent); }
+.task-check-label { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border:1px solid var(--border); border-radius:4px; font-size:12px; cursor:pointer; transition:background .15s; }
+.task-check-label:hover { background:rgba(88,166,255,0.06); }
+.task-check-label input[type="checkbox"] { margin:0; cursor:pointer; }
+.btn-sm { padding:4px 10px; font-size:12px; }
+.btn-sm.btn-danger { background:var(--red); border-color:var(--red); color:#fff; }
+.btn-sm.btn-danger:hover { opacity:0.85; color:#fff; }
+
+/* ── 任务卡片列表 ── */
+.task-card-list { display:flex; flex-direction:column; gap:8px; }
+.task-card { background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+.task-card-row { display:flex; align-items:center; gap:12px; padding:12px 16px; }
+.task-card-left { flex-shrink:0; }
+.task-card-body { flex:1; min-width:0; }
+.task-card-title { font-weight:600; font-size:14px; color:var(--text); }
+.task-card-prompt { font-size:12px; color:var(--text-dim); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.task-card-summary { font-size:11px; color:var(--accent); margin-top:2px; }
+.task-card-actions { display:flex; gap:6px; flex-shrink:0; }
+
+/* ── 行内日志区域 ── */
+.task-log-area { border-top:1px solid var(--border); background:#0a0a10; }
+.task-log-content { padding:10px 16px; max-height:300px; overflow-y:auto; font-family:'Cascadia Code','Fira Code','Consolas',monospace; font-size:12px; line-height:1.7; }
+.task-log-status { padding:4px 16px 8px; font-size:12px; color:var(--text-dim); }
+.log-line { white-space:pre-wrap; word-break:break-all; }
+.log-line + .log-line { margin-top:2px; }
+
+/* ── 历史弹窗 ── */
+.task-hist-item { padding:10px 0; border-bottom:1px solid #fff; }
+.task-hist-item:last-child { border-bottom:none; }
+.task-hist-time { font-size:11px; color:var(--text-dim); margin-bottom:4px; }
+.task-hist-result { font-size:13px; line-height:1.5; white-space:pre-wrap; word-break:break-all; }

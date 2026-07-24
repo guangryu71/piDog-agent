@@ -1,0 +1,12 @@
+{
+  "id": "24675dba",
+  "title": "对话",
+  "agent_prompt": "你是一个帮助性ai",
+  "init_message": "你好呀",
+  "selected_skills": [],
+  "selected_mcp": [],
+  "selected_tools": [],
+  "selected_files": [],
+  "created_at": "2026-07-24 18:52:08",
+  "updated_at": "2026-07-24 18:52:08"
+}

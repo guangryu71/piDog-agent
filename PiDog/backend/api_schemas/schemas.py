@@ -103,6 +103,57 @@ class TokenStats(BaseModel):
 
 # ==================== 审批 ====================
 
+# ==================== 自定义任务 ====================
+
+class TaskSchema(BaseModel):
+    """任务数据模型（持久化结构）"""
+    id: str = Field(..., description="任务唯一ID")
+    title: str = Field(..., description="任务标题（仅展示用，不参与对话）")
+    agent_prompt: str = Field(..., description="Agent 提示词定义")
+    init_message: str = Field("", description="初始对话内容")
+    selected_skills: List[str] = Field(default_factory=list, description="选中的技能名列表，空=全选")
+    selected_mcp: List[str] = Field(default_factory=list, description="选中的 MCP 名列表，空=全选")
+    selected_tools: List[str] = Field(default_factory=list, description="选中的工具名列表，空=全选")
+    selected_files: List[str] = Field(default_factory=list, description="关联文件路径列表")
+    created_at: str = Field("", description="创建时间")
+    updated_at: str = Field("", description="更新时间")
+
+
+class TaskCreate(BaseModel):
+    """创建任务请求"""
+    title: str = Field(..., description="任务标题")
+    agent_prompt: str = Field(..., description="Agent 提示词")
+    init_message: str = Field("", description="初始对话内容")
+    selected_skills: List[str] = Field(default_factory=list)
+    selected_mcp: List[str] = Field(default_factory=list)
+    selected_tools: List[str] = Field(default_factory=list)
+    selected_files: List[str] = Field(default_factory=list)
+
+
+class TaskUpdate(BaseModel):
+    """更新任务请求"""
+    title: Optional[str] = None
+    agent_prompt: Optional[str] = None
+    init_message: Optional[str] = None
+    selected_skills: Optional[List[str]] = None
+    selected_mcp: Optional[List[str]] = None
+    selected_tools: Optional[List[str]] = None
+    selected_files: Optional[List[str]] = None
+
+
+class TaskRunRequest(BaseModel):
+    """运行任务请求"""
+    task_id: str = Field(..., description="要运行的任务ID")
+
+
+class TaskRunResponse(BaseModel):
+    """运行任务响应"""
+    session_id: str = Field(..., description="新建的会话ID")
+    task_id: str = Field(..., description="任务ID")
+
+
+# ==================== 审批 ====================
+
 class ApprovalRequest(BaseModel):
     task_id: str = Field(..., description="审批任务ID")
     approved: bool = Field(..., description="true=批准, false=拒绝")

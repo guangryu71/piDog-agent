@@ -72,6 +72,16 @@ const api = {
         return this._fetch('POST', '/api/model/ocr-apikey', { api_key: apiKey });
     },
 
+    // ---- Tasks ----
+    getTasks() { return this._fetch('GET', '/api/tasks'); },
+    getTask(id) { return this._fetch('GET', `/api/tasks/${id}`); },
+    createTask(data) { return this._fetch('POST', '/api/tasks', data); },
+    updateTask(id, data) { return this._fetch('PUT', `/api/tasks/${id}`, data); },
+    deleteTask(id) { return this._fetch('DELETE', `/api/tasks/${id}`); },
+    runTask(id) { return this._fetch('POST', `/api/tasks/${id}/run`); },
+    saveTaskRunResult(id, data) { return this._fetch('POST', `/api/tasks/${id}/results`, data); },
+    getTaskRunResults(id) { return this._fetch('GET', `/api/tasks/${id}/results`); },
+
     // ---- Tools ----
     getTools() { return this._fetch('GET', '/api/tools'); },
 

@@ -15,6 +15,7 @@
         tokens: renderTokensPage,
         mcp: renderMcpPage,
         workflow: renderWorkflowPage,
+        task: renderTaskPage,
     };
 
     // 当前页面
@@ -115,5 +116,28 @@
     window.fmtTime = function (ts) {
         const d = new Date(ts);
         return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    };
+
+    // 切换到 Chat 页面并加载指定 session（供自定义任务运行使用）
+    window.switchToChatWithSession = function (sid) {
+        const chatNav = document.querySelector('.nav-item[data-page="chat"]');
+        if (chatNav) {
+            if (currentPage !== 'chat') {
+                chatNav.click();
+            }
+            setTimeout(function () {
+                if (typeof window.loadSession === 'function') {
+                    window.loadSession(sid);
+                }
+            }, 150);
+        }
+    };
+
+    // 刷新指定页面
+    window.refreshPage = function (page) {
+        if (pageContainers[page]) {
+            var div = pageContainers[page];
+            if (pages[page]) pages[page](div);
+        }
     };
 })();

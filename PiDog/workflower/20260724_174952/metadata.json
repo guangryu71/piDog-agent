@@ -1,0 +1,18 @@
+{
+  "timestamp": "20260724_174952",
+  "formattedTime": "2026/7/24 17:49:52",
+  "nodeCount": 1,
+  "duration": "11.5s",
+  "nodes": [
+    {
+      "nodeId": "node_7",
+      "type": "output-display",
+      "modelName": "📺 内容展示",
+      "category": "output",
+      "order": 1,
+      "contentType": "text",
+      "content": "你好呀！很高兴见到你～今天有什么我可以帮你的吗？😊",
+      "fileName": null
+    }
+  ]
+}

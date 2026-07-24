@@ -24,6 +24,7 @@ from utils.function_calling_executor import FunctionCallingExecutor
 
 from config import AppState, PROJECT_ROOT, WORKING_DIRECTORY
 from services.token_service import record_usage
+from services.task_service import task_session_map, get_task_session, clear_task_session
 
 # ---- 常量 ----
 MAX_CONSECUTIVE_FAILURES = 3
@@ -39,21 +40,44 @@ FIRE_AND_FORGET_TOOLS = {"blender_operation"}
 
 # ---- 两阶段工具选择 ----
 
-def _select_tools(user_message: str) -> list:
+def _select_tools(user_message: str, session_id: str = None) -> list:
     """
-    第一阶段：扫描 skills/ 文件夹的 README.md，让 LLM 选择需要的技能。
-    第二阶段：根据选中技能，从 SKILL_REGISTRY 返回对应的工具 Schema。
+    两阶段工具选择。如果当前 session 处于任务（task）上下文中，
+    则优先使用任务预设的工具过滤，减少 token 消耗。
 
     Args:
         user_message: 用户消息
+        session_id: 会话ID（可选，用于任务上下文）
 
     Returns:
-        选中的工具 Schema 列表（只包含需要技能的工具 + finish_task）
+        选中的工具 Schema 列表
     """
+    # ── 任务上下文：使用任务预设的工具过滤 ──
+    task_ctx = get_task_session(session_id) if session_id else None
+    if task_ctx:
+        selected_skills = task_ctx.get("selected_skills", [])
+        selected_tools = task_ctx.get("selected_tools", [])
+
+        # 如果有预设的工具名列表，直接返回这些工具的 schema
+        if selected_tools:
+            all_schemas = get_tool_schemas()
+            filtered = [s for s in all_schemas if s["function"]["name"] in selected_tools]
+            if filtered:
+                return filtered
+            # 如果预设工具名无效，回退到技能选择
+
+        # 如果有预设的技能名，直接返回对应工具
+        if selected_skills:
+            tools = get_tools_for_skills(selected_skills)
+            return tools
+
+        # 任务没设过滤 → 退回全量工具
+        return get_tool_schemas()
+
+    # ── 普通上下文：LLM 选择技能 ──
     prompt = build_skill_selection_prompt(user_message)
 
     if not prompt:
-        # skills/ 文件夹为空或不存在 → 退回全量工具
         return get_tool_schemas()
 
     try:
@@ -64,14 +88,12 @@ def _select_tools(user_message: str) -> list:
             max_tokens=200,
             temperature=0.3,
         )
-        # 第一轮：选技能（不用 Function Calling，纯文本）
         response = llm.chat_no_memory(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             max_tokens=200,
         )
 
-        # 解析 LLM 返回的 JSON
         import re
         match = re.search(r'\{[^{}]*"selected_skills"[^{}]*\}', response, re.DOTALL)
         if match:
@@ -86,7 +108,6 @@ def _select_tools(user_message: str) -> list:
         import logging
         logging.getLogger("agent").warning(f"[SKILL SELECT] Failed: {e}, falling back to all tools")
 
-    # 退回全量工具
     return get_tool_schemas()
 
 # ---- 会话内存缓存 ----
@@ -268,16 +289,29 @@ def _process_single_file(file_id: str) -> tuple:
 
 
 def _get_or_create_session(session_id: str = None) -> str:
-    """获取已有会话或创建新会话"""
+    """获取已有会话或创建新会话。
+    如果是任务（task）触发的会话，自动注入 agent_prompt 和 init_message。"""
     if session_id and session_id in _sessions:
         return session_id
 
     sid = session_id or str(uuid.uuid4())[:8]
     if sid not in _sessions:
+        messages = _load_session_from_file(sid)
         _sessions[sid] = {
-            "messages": _load_session_from_file(sid),
+            "messages": messages,
             "created_at": time.time(),
         }
+
+    # ── 任务上下文注入：如果该 session 是任务创建的 ──
+    # 只注入 agent_prompt（作为 system 消息），init_message 由前端通过 stream 发送
+    task_ctx = get_task_session(sid)
+    if task_ctx and not _sessions[sid]["messages"]:
+        agent_prompt = task_ctx.get("agent_prompt", "")
+        if agent_prompt:
+            _sessions[sid]["messages"].append({
+                "role": "system",
+                "content": f"[TASK PROMPT]\n{agent_prompt}",
+            })
     return sid
 
 
@@ -479,7 +513,7 @@ def chat_sync(session_id: str, user_message: str, file_ids: list = None, max_ite
         temperature=0.7,
     )
     executor = FunctionCallingExecutor(WORKING_DIRECTORY or os.path.join(PROJECT_ROOT, "workplace"))
-    tools = _select_tools(user_message)  # 两阶段选择：先选技能再取对应 Schema
+    tools = _select_tools(user_message, sid)  # 两阶段选择：先选技能再取对应 Schema
     system_prompt = _build_system_prompt()
 
     messages.append(_build_user_message(user_message, file_ids))
@@ -661,7 +695,7 @@ async def chat_stream(session_id: str, user_message: str, file_ids: list = None,
         temperature=0.7,
     )
     executor = FunctionCallingExecutor(WORKING_DIRECTORY or os.path.join(PROJECT_ROOT, "workplace"))
-    tools = _select_tools(user_message)  # 两阶段选择：先选技能再取对应 Schema
+    tools = _select_tools(user_message, sid)  # 两阶段选择：先选技能再取对应 Schema
     system_prompt = _build_system_prompt()
 
     # 构建用户消息（可能附带文件）
